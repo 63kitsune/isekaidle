@@ -50,6 +50,10 @@ const dom = {
   settingsBtn: null,
   settingsModal: null,
   settingsClose: null,
+  rulesBtn: null,
+  rulesModal: null,
+  rulesClose: null,
+  rulesBody: null,
   dailyBtn: null,
   newRoundBtn: null,
   preview: null,
@@ -159,6 +163,145 @@ const applyRowAnimationTiming = (row) => {
 };
 
 const normalizeStatus = (value) => (value ? String(value).toLowerCase() : "");
+
+const formatRangeValue = (value, isDecimal) => {
+  if (!Number.isFinite(value)) return "";
+  if (isDecimal) return value.toFixed(2);
+  return Math.round(value).toLocaleString();
+};
+
+const buildRulesContent = () => {
+  if (!dom.rulesBody || !state.config) return;
+  dom.rulesBody.innerHTML = "";
+
+  const basicSection = document.createElement("div");
+  const basicTitle = document.createElement("div");
+  basicTitle.className = "rules-section-title";
+  basicTitle.textContent = "Basics";
+  const basicList = document.createElement("div");
+  basicList.className = "rules-list";
+  [
+    "Guess the isekai. Each guess compares against the hidden title.",
+    "Match categories to find the exact show.",
+    "Number categories hint higher/lower; text matches need exact hits."
+  ].forEach((text) => {
+    const item = document.createElement("div");
+    item.textContent = text;
+    basicList.appendChild(item);
+  });
+  basicSection.appendChild(basicTitle);
+  basicSection.appendChild(basicList);
+
+  const categoriesSection = document.createElement("div");
+  const categoriesTitle = document.createElement("div");
+  categoriesTitle.className = "rules-section-title";
+  categoriesTitle.textContent = "Categories";
+  categoriesSection.appendChild(categoriesTitle);
+
+  const entries = state.rawEntries || [];
+  const categories = (state.config && state.config.categories) || [];
+  const previewCount = 6;
+  categories.forEach((category) => {
+    const values = [];
+    entries.forEach((entry) => {
+      if (!entry.categories) return;
+      const raw = entry.categories[category.key];
+      if (raw === null || raw === undefined) return;
+      if (category.type === "list") {
+        if (Array.isArray(raw)) {
+          raw.forEach((item) => values.push(item));
+        } else {
+          values.push(raw);
+        }
+      } else {
+        values.push(raw);
+      }
+    });
+
+    const row = document.createElement("div");
+    row.className = "rules-category";
+
+    const header = document.createElement("button");
+    header.type = "button";
+    header.className = "rules-category-header";
+    header.setAttribute("aria-expanded", "false");
+
+    const label = document.createElement("div");
+    label.className = "rules-label";
+    label.textContent = category.label;
+
+    const meta = document.createElement("div");
+    meta.className = "rules-category-meta";
+
+    const contentWrap = document.createElement("div");
+    contentWrap.className = "rules-category-content";
+
+    const content = document.createElement("div");
+    content.className = "rules-values";
+    let expandable = true;
+
+    if (category.type === "number") {
+      const numbers = values.map((value) => Number(value)).filter((value) => Number.isFinite(value));
+      if (numbers.length) {
+        const min = Math.min(...numbers);
+        const max = Math.max(...numbers);
+        const isDecimal = numbers.some((value) => value % 1 !== 0);
+        content.classList.add("range");
+        const rangeText = `${formatRangeValue(min, isDecimal)} - ${formatRangeValue(max, isDecimal)}`;
+        content.textContent = rangeText;
+        meta.textContent = rangeText;
+        expandable = false;
+      } else {
+        content.classList.add("rules-empty");
+        content.textContent = "No data";
+        meta.textContent = "Empty";
+        expandable = false;
+      }
+    } else {
+      const unique = uniqueList(values);
+      if (!unique.length) {
+        content.classList.add("rules-empty");
+        content.textContent = "No data";
+        meta.textContent = "Empty";
+        expandable = false;
+      } else {
+        unique.sort((a, b) => a.localeCompare(b));
+        const preview = unique.slice(0, previewCount).join(", ");
+        meta.textContent = unique.length > previewCount ? `${preview}, ...` : preview;
+        if (unique.length <= previewCount) {
+          expandable = false;
+        }
+        unique.forEach((value) => {
+          const chip = document.createElement("span");
+          chip.className = "rules-chip";
+          chip.textContent = value;
+          content.appendChild(chip);
+        });
+      }
+    }
+
+    header.appendChild(label);
+    header.appendChild(meta);
+    contentWrap.appendChild(content);
+
+    if (expandable) {
+      header.addEventListener("click", () => {
+        const isOpen = row.classList.toggle("open");
+        header.setAttribute("aria-expanded", isOpen ? "true" : "false");
+      });
+    } else {
+      row.classList.add("not-expandable");
+      header.setAttribute("aria-expanded", "true");
+    }
+
+    row.appendChild(header);
+    row.appendChild(contentWrap);
+    categoriesSection.appendChild(row);
+  });
+
+  dom.rulesBody.appendChild(basicSection);
+  dom.rulesBody.appendChild(categoriesSection);
+};
 
 const getFilteredEntries = () => {
   const minMembers = Number(state.uiSettings.minMembers || 0);
@@ -1133,6 +1276,7 @@ const init = async () => {
 
   buildPools();
   buildSearchIndex();
+  buildRulesContent();
 
   state.target = pickTarget();
 
@@ -1164,6 +1308,10 @@ window.addEventListener("DOMContentLoaded", () => {
   dom.dailyBtn = document.querySelector("#daily-btn");
   dom.settingsModal = document.querySelector("#settings-modal");
   dom.settingsClose = document.querySelector("#settings-close");
+  dom.rulesBtn = document.querySelector("#rules-btn");
+  dom.rulesModal = document.querySelector("#rules-modal");
+  dom.rulesClose = document.querySelector("#rules-close");
+  dom.rulesBody = document.querySelector("#rules-body");
   dom.settingAnimations = document.querySelector("#setting-animations");
   dom.settingHints = document.querySelector("#setting-hints");
   dom.settingHideUnreleased = document.querySelector("#setting-hide-unreleased");
@@ -1200,8 +1348,21 @@ window.addEventListener("DOMContentLoaded", () => {
     dom.settingsModal.hidden = true;
   };
 
+  const openRules = () => {
+    if (!dom.rulesModal) return;
+    dom.rulesModal.hidden = false;
+  };
+
+  const closeRules = () => {
+    if (!dom.rulesModal) return;
+    dom.rulesModal.hidden = true;
+  };
+
   if (dom.settingsBtn) {
     dom.settingsBtn.addEventListener("click", openSettings);
+  }
+  if (dom.rulesBtn) {
+    dom.rulesBtn.addEventListener("click", openRules);
   }
   if (dom.dailyBtn) {
     dom.dailyBtn.addEventListener("click", async () => {
@@ -1229,6 +1390,9 @@ window.addEventListener("DOMContentLoaded", () => {
   if (dom.settingsClose) {
     dom.settingsClose.addEventListener("click", closeSettings);
   }
+  if (dom.rulesClose) {
+    dom.rulesClose.addEventListener("click", closeRules);
+  }
   if (dom.settingsModal) {
     dom.settingsModal.addEventListener("click", (event) => {
       if (event.target && event.target.closest && event.target.closest("[data-close='true']")) {
@@ -1236,10 +1400,21 @@ window.addEventListener("DOMContentLoaded", () => {
       }
     });
   }
+  if (dom.rulesModal) {
+    dom.rulesModal.addEventListener("click", (event) => {
+      if (event.target && event.target.closest && event.target.closest("[data-close='true']")) {
+        closeRules();
+      }
+    });
+  }
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && dom.settingsModal && !dom.settingsModal.hidden) {
       closeSettings();
+      return;
+    }
+    if (event.key === "Escape" && dom.rulesModal && !dom.rulesModal.hidden) {
+      closeRules();
     }
   });
 

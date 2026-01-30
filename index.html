@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Isekaidle</title>
   <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" type="image/png" href="favicon.ico" />
 </head>
 <body>
   <main class="app">
@@ -21,6 +22,7 @@
         <div class="top-actions">
           <button id="daily-btn" class="settings-btn" type="button">Daily</button>
           <button id="settings-btn" class="settings-btn" type="button">Settings</button>
+          <button id="rules-btn" class="settings-btn" type="button">Rules</button>
         </div>
       </div>
     </header>
@@ -28,7 +30,7 @@
     <section class="search-panel">
       <div class="search-box">
         <input id="search-input" type="text" placeholder="Search for an anime..." autocomplete="off" />
-        <button id="clear-btn" type="button" aria-label="Clear">x</button>
+        <button id="clear-btn" class="icon-btn icon-btn-clear" type="button" aria-label="Clear"><img src="assets/close.svg" alt="Clear"></button>
       </div>
       <button id="guess-btn" type="button">Guess</button>
       <div id="suggestions" class="suggestions"></div>
@@ -53,7 +55,7 @@
       <div id="settings-title" class="modal-title">
         Settings <span id="setting-title-count" class="setting-value"></span>
       </div>
-        <button id="settings-close" type="button" class="modal-close" data-close="true">x</button>
+        <button id="settings-close" type="button" class="modal-close icon-btn" data-close="true" aria-label="Close settings"></button>
       </div>
       <div class="modal-body">
         <label class="setting setting-toggle">
@@ -113,6 +115,17 @@
           <input id="setting-min-members" type="number" min="0" step="1000" />
         </label>
       </div>
+    </div>
+  </div>
+
+  <div id="rules-modal" class="modal" hidden>
+    <div class="modal-backdrop" data-close="true"></div>
+    <div class="modal-panel modal-panel-wide" role="dialog" aria-modal="true" aria-labelledby="rules-title">
+      <div class="modal-header">
+        <div id="rules-title" class="modal-title">Rules</div>
+        <button id="rules-close" type="button" class="modal-close icon-btn" data-close="true" aria-label="Close rules"></button>
+      </div>
+      <div id="rules-body" class="modal-body rules-body"></div>
     </div>
   </div>
 
