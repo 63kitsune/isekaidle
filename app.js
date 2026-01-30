@@ -13,13 +13,23 @@ const state = {
   gameOver: false,
   resultOutcome: "",
   displayMode: "english",
+  dailyId: null,
+  guessSkips: 0,
+  libraryMode: false,
+  libraryWins: new Set(),
+  streaks: { current: 0, daily: 0, lastDailyId: null },
+  librarySort: { key: "title", dir: "default" },
+  boardSort: { key: "title", dir: "default" },
   uiSettings: {
     animations: true,
     showHints: true,
     titleMode: "english",
     animSpeedMs: 450,
-    minMembers: 0,
-    fontSize: 12
+    minMembers: 50000,
+    fontSize: 12,
+    relatedMode: null,
+    hideUnreleased: true,
+    finishedOnly: true
   },
   entryById: new Map(),
 };
@@ -31,22 +41,33 @@ const dom = {
   suggestions: null,
   boardHeader: null,
   boardBody: null,
+  searchPanel: null,
+  board: null,
+  library: null,
+  libraryHeader: null,
+  libraryBody: null,
+  librarySearch: null,
+  libraryBtn: null,
+  settingsDailyNote: null,
   guessCount: null,
   totalCount: null,
   status: null,
   hints: null,
+  hintSkip: null,
   result: null,
+  streakLabel: null,
+  streakCount: null,
   settingAnimations: null,
   settingHints: null,
   settingHideUnreleased: null,
   settingFinishedOnly: null,
   settingTitle: null,
+  settingRelatedMode: null,
   settingAnimSpeed: null,
   settingAnimSpeedValue: null,
   settingMinMembers: null,
-  settingMembersCount: null,
   settingFontSize: null,
-  settingTitleCount: null,
+  settingFilterCount: null,
   settingsBtn: null,
   settingsModal: null,
   settingsClose: null,
@@ -60,6 +81,9 @@ const dom = {
 };
 
 const SETTINGS_KEY = "isekai-guess-ui";
+const DAILY_PROGRESS_KEY = "isekai-daily-progress";
+const LIBRARY_WINS_KEY = "isekai-library-wins";
+const STREAK_KEY = "isekai-streaks";
 
 const seasonPattern = /(\bseason\s*1\b|\b1st\s*season\b|\bfirst\s*season\b|\bs1\b|\bseason\s*one\b|\bpart\s*1\b)/i;
 
@@ -303,7 +327,8 @@ const buildRulesContent = () => {
   dom.rulesBody.appendChild(categoriesSection);
 };
 
-const getFilteredEntries = () => {
+const getFilteredEntries = (forceFilters = false) => {
+  if (!forceFilters && state.uiSettings.dailyMode) return state.rawEntries;
   const minMembers = Number(state.uiSettings.minMembers || 0);
   const hideUnreleased = !!state.uiSettings.hideUnreleased;
   const finishedOnly = !!state.uiSettings.finishedOnly;
@@ -323,14 +348,13 @@ const getFilteredEntries = () => {
 };
 
 const updateAvailableCount = () => {
-  if (!dom.settingMembersCount) return;
-  const available = state.answerPool.length;
-  dom.settingMembersCount.textContent = `${available} titles`;
-  if (dom.settingTitleCount) dom.settingTitleCount.textContent = `(${available})`;
+  if (!dom.settingFilterCount) return;
+  const available = getFilteredEntries(true).length;
+  dom.settingFilterCount.textContent = `(${available})`;
 };
 
 const buildPools = () => {
-  const mode = Number(state.config.relatedMode || 3);
+  const mode = getRelatedMode();
   const poolEntries = getFilteredEntries();
   const byGroup = new Map();
 
@@ -400,8 +424,54 @@ const pickTarget = () => {
   return pool[idx];
 };
 
-const renderHeader = () => {
-  dom.boardHeader.innerHTML = "";
+const getSortState = (mode) => (mode === "library" ? state.librarySort : state.boardSort);
+
+const isSortableCategory = (category) => {
+  if (!category) return false;
+  if (category.type === "list") return false;
+  return true;
+};
+
+const setSortState = (mode, next) => {
+  if (mode === "library") {
+    state.librarySort = next;
+  } else {
+    state.boardSort = next;
+  }
+};
+
+const toggleSort = (mode, key) => {
+  const current = getSortState(mode);
+  let next = { ...current };
+  if (mode === "game") {
+    if (current.key !== key || current.dir === "default") {
+      next = { key, dir: "desc" };
+    } else {
+      next = { key, dir: "default" };
+    }
+  } else {
+    if (current.key !== key) {
+      next = { key, dir: "desc" };
+    } else if (current.dir === "desc") {
+      next = { key, dir: "asc" };
+    } else if (current.dir === "asc") {
+      next = { key, dir: "default" };
+    } else {
+      next = { key, dir: "desc" };
+    }
+  }
+  setSortState(mode, next);
+  renderHeader(mode === "library" ? dom.libraryHeader : dom.boardHeader, mode);
+  if (mode === "library") {
+    renderLibraryList();
+  } else {
+    renderGuessBoard();
+  }
+};
+
+const renderHeader = (target = dom.boardHeader, mode = "game") => {
+  if (!target) return;
+  target.innerHTML = "";
   const row = document.createElement("div");
   row.className = "board-row header";
   row.style.setProperty("--col-count", state.config.categories.length);
@@ -409,19 +479,32 @@ const renderHeader = () => {
   row.style.gridTemplateColumns = computeGridTemplate();
   applyRowAnimationTiming(row);
 
-  const titleCell = document.createElement("div");
-  titleCell.className = "cell header-cell";
-  titleCell.textContent = "Title";
-  row.appendChild(titleCell);
+  const sortState = getSortState(mode);
+
+  const makeHeaderCell = (label, key, sortable = true) => {
+    const cell = document.createElement("div");
+    cell.className = "cell header-cell" + (sortable ? " sortable" : "");
+    cell.textContent = label;
+    cell.dataset.key = key;
+    if (sortable) {
+      if (sortState.key === key) {
+        cell.dataset.sort = sortState.dir;
+      } else {
+        cell.dataset.sort = "default";
+      }
+      cell.addEventListener("click", () => toggleSort(mode, key));
+    }
+    return cell;
+  };
+
+  row.appendChild(makeHeaderCell("Title", "title", true));
 
   for (const category of state.config.categories) {
-    const cell = document.createElement("div");
-    cell.className = "cell header-cell";
-    cell.textContent = category.label;
-    row.appendChild(cell);
+    const sortable = isSortableCategory(category);
+    row.appendChild(makeHeaderCell(category.label, category.key, sortable));
   }
 
-  dom.boardHeader.appendChild(row);
+  target.appendChild(row);
 };
 
 const formatValue = (value, type) => {
@@ -494,7 +577,7 @@ const compareListItem = (category, item, targetList) => {
 };
 
 const isCorrectGuess = (entry) => {
-  const mode = Number(state.config.relatedMode || 3);
+  const mode = getRelatedMode();
   if (!entry || !state.target) return false;
   if (mode === 1) return entry.id === state.target.id;
   if (mode === 2) {
@@ -504,7 +587,7 @@ const isCorrectGuess = (entry) => {
   return entry.id === state.target.id;
 };
 
-const renderGuessRow = (entry) => {
+const renderGuessRow = (entry, insertMode = "prepend") => {
   const row = document.createElement("div");
   row.className = "board-row guess";
   row.style.setProperty("--col-count", state.config.categories.length);
@@ -613,11 +696,130 @@ const renderGuessRow = (entry) => {
     row.appendChild(cell);
   });
 
-  dom.boardBody.prepend(row);
+  if (insertMode === "append") {
+    dom.boardBody.appendChild(row);
+  } else {
+    dom.boardBody.prepend(row);
+  }
+};
+
+const getSortValue = (entry, key) => {
+  if (!entry) return "";
+  if (key === "title") return entry.displayTitle || entry.titles.main || "";
+  const value = entry.categories ? entry.categories[key] : null;
+  if (Array.isArray(value)) return value.join(", ");
+  return value;
+};
+
+const sortEntries = (entries, sortState, defaultOrderFn) => {
+  if (!sortState || sortState.dir === "default") {
+    return entries.slice().sort(defaultOrderFn);
+  }
+  const multiplier = sortState.dir === "desc" ? -1 : 1;
+  const key = sortState.key;
+  return entries.slice().sort((a, b) => {
+    const valA = getSortValue(a, key);
+    const valB = getSortValue(b, key);
+    const numA = Number(valA);
+    const numB = Number(valB);
+    if (Number.isFinite(numA) && Number.isFinite(numB)) {
+      if (numA !== numB) return (numA - numB) * multiplier;
+    } else {
+      const strA = formatDetailValue(valA).toString().toLowerCase();
+      const strB = formatDetailValue(valB).toString().toLowerCase();
+      if (strA !== strB) return strA.localeCompare(strB) * multiplier;
+    }
+    return defaultOrderFn(a, b);
+  });
+};
+
+const renderGuessBoard = () => {
+  if (!dom.boardBody) return;
+  if (!state.target) {
+    dom.boardBody.innerHTML = "";
+    return;
+  }
+  dom.boardBody.innerHTML = "";
+  const entries = state.guesses.map((guess, idx) => ({ ...guess, _guessIndex: idx }));
+  let sortState = state.boardSort;
+  if (sortState.key !== "title") {
+    const cat = (state.config.categories || []).find((c) => c.key === sortState.key);
+    if (!isSortableCategory(cat)) {
+      sortState = { key: "title", dir: "default" };
+      state.boardSort = sortState;
+    }
+  }
+  const sorted = sortEntries(
+    entries,
+    sortState,
+    (a, b) => b._guessIndex - a._guessIndex
+  );
+  sorted.forEach((entry) => renderGuessRow(entry, "append"));
+};
+
+const renderLibraryRow = (entry) => {
+  const row = document.createElement("div");
+  row.className = "board-row library-row";
+  row.style.setProperty("--col-count", state.config.categories.length);
+  row.style.setProperty("--total-cols", state.config.categories.length + 1);
+  row.style.gridTemplateColumns = computeGridTemplate();
+
+  const titleCell = document.createElement("div");
+  titleCell.className = "cell title-cell";
+  titleCell.style.setProperty("--cell-index", 0);
+
+  const poster = document.createElement("img");
+  poster.className = "poster";
+  poster.alt = entry.displayTitle || "Poster";
+  poster.src = entry.poster || "";
+
+  const titleBlock = document.createElement("div");
+  titleBlock.className = "title-block";
+
+  const title = document.createElement("div");
+  title.className = "title-name";
+  title.textContent = entry.displayTitle || entry.titles.main || "Unknown";
+
+  titleBlock.appendChild(title);
+  title.title = entry.titles && entry.titles.main ? entry.titles.main : title.textContent;
+
+  titleCell.appendChild(poster);
+  titleCell.appendChild(titleBlock);
+  row.appendChild(titleCell);
+
+  state.config.categories.forEach((category, index) => {
+    const cell = document.createElement("div");
+    cell.className = "cell";
+    cell.style.setProperty("--cell-index", index + 1);
+    const value = entry.categories ? entry.categories[category.key] : null;
+    if (category.type === "list") {
+      cell.classList.add("list-cell");
+      const list = Array.isArray(value) ? value : [];
+      if (!list.length) {
+        cell.textContent = "-";
+      } else {
+        const listWrap = document.createElement("div");
+        listWrap.className = "pill-wrap";
+        list.forEach((item) => {
+          const pill = document.createElement("span");
+          pill.className = "pill";
+          pill.textContent = item;
+          listWrap.appendChild(pill);
+        });
+        cell.appendChild(listWrap);
+      }
+    } else {
+      const formatted = formatValue(value, category.type);
+      cell.textContent = formatDetailValue(formatted);
+    }
+    row.appendChild(cell);
+  });
+
+  dom.libraryBody.appendChild(row);
 };
 
 const updateCounts = () => {
-  dom.guessCount.textContent = String(state.guesses.length);
+  dom.guessCount.textContent = String(getGuessCount());
   const maxGuesses = getMaxGuesses();
   dom.totalCount.textContent = String(Number.isFinite(maxGuesses) ? maxGuesses : state.answerPool.length);
 };
@@ -628,6 +830,146 @@ const setStatus = (message, tone = "") => {
   dom.status.hidden = !message;
 };
 
+const getGuessCount = () => state.guesses.length + (state.guessSkips || 0);
+
+const getRelatedMode = () => {
+  const stored = state.uiSettings.relatedMode;
+  const base = Number.isFinite(stored) ? stored : Number(state.config && state.config.relatedMode);
+  return Number.isFinite(base) && base > 0 ? base : 3;
+};
+
+const loadLibraryWins = () => {
+  try {
+    const stored = JSON.parse(localStorage.getItem(LIBRARY_WINS_KEY));
+    if (Array.isArray(stored)) {
+      return new Set(stored.map((id) => String(id)));
+    }
+  } catch (_err) {
+    // ignore
+  }
+  return new Set();
+};
+
+const saveLibraryWins = () => {
+  try {
+    const payload = Array.from(state.libraryWins || []);
+    localStorage.setItem(LIBRARY_WINS_KEY, JSON.stringify(payload));
+  } catch (_err) {
+    // ignore
+  }
+};
+
+const markWin = (entry) => {
+  if (!entry) return;
+  const ids = new Set();
+  if (Array.isArray(entry.members)) {
+    entry.members.forEach((member) => ids.add(String(member.id)));
+  } else {
+    ids.add(String(entry.id));
+  }
+  if (entry.related && Array.isArray(entry.related.all_ids)) {
+    entry.related.all_ids.forEach((id) => ids.add(String(id)));
+  }
+  ids.forEach((id) => state.libraryWins.add(id));
+  saveLibraryWins();
+  if (state.libraryMode) {
+    renderLibraryList();
+  }
+};
+
+const loadStreaks = () => {
+  try {
+    const stored = JSON.parse(localStorage.getItem(STREAK_KEY));
+    if (stored && typeof stored === "object") {
+      return {
+        current: Number(stored.current) || 0,
+        daily: Number(stored.daily) || 0,
+        lastDailyId: stored.lastDailyId ? String(stored.lastDailyId) : null
+      };
+    }
+  } catch (_err) {
+    // ignore
+  }
+  return { current: 0, daily: 0, lastDailyId: null };
+};
+
+const saveStreaks = () => {
+  try {
+    localStorage.setItem(STREAK_KEY, JSON.stringify(state.streaks));
+  } catch (_err) {
+    // ignore
+  }
+};
+
+const updateStreakDisplay = () => {
+  if (!dom.streakLabel || !dom.streakCount) return;
+  if (state.uiSettings.dailyMode) {
+    dom.streakLabel.textContent = "Daily streak";
+    dom.streakCount.textContent = String(state.streaks.daily || 0);
+  } else {
+    dom.streakLabel.textContent = "Current streak";
+    dom.streakCount.textContent = String(state.streaks.current || 0);
+  }
+};
+
+const registerWin = () => {
+  if (state.uiSettings.dailyMode) {
+    if (state.dailyId && state.streaks.lastDailyId !== String(state.dailyId)) {
+      state.streaks.daily = (state.streaks.daily || 0) + 1;
+      state.streaks.lastDailyId = String(state.dailyId);
+    }
+  } else {
+    state.streaks.current = (state.streaks.current || 0) + 1;
+  }
+  saveStreaks();
+  updateStreakDisplay();
+};
+
+const registerLoss = () => {
+  if (state.uiSettings.dailyMode) {
+    state.streaks.daily = 0;
+    if (state.dailyId) state.streaks.lastDailyId = String(state.dailyId);
+  } else {
+    state.streaks.current = 0;
+  }
+  saveStreaks();
+  updateStreakDisplay();
+};
+
+const loadDailyProgress = () => {
+  try {
+    const stored = JSON.parse(localStorage.getItem(DAILY_PROGRESS_KEY));
+    if (stored && typeof stored === "object" && stored.id) return stored;
+  } catch (_err) {
+    // ignore
+  }
+  return null;
+};
+
+const saveDailyProgress = () => {
+  if (!state.uiSettings.dailyMode || !state.dailyId) return;
+  try {
+    const payload = {
+      id: state.dailyId,
+      guesses: state.guesses.map((guess) => guess.id),
+      skipCount: state.guessSkips || 0,
+      hintState: state.hintState,
+      gameOver: state.gameOver,
+      resultOutcome: state.resultOutcome || ""
+    };
+    localStorage.setItem(DAILY_PROGRESS_KEY, JSON.stringify(payload));
+  } catch (_err) {
+    // ignore
+  }
+};
+
+const getEntryById = (id) => {
+  if (!id) return null;
+  const entry = state.entryById.get(id);
+  if (entry) return entry;
+  return state.rawEntries.find((item) => item.id === id) || null;
+};
+
 const loadUiSettings = () => {
   try {
     const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY));
@@ -635,14 +977,15 @@ const loadUiSettings = () => {
       return {
         animations: stored.animations !== false,
         showHints: stored.showHints !== false,
-        hideUnreleased: stored.hideUnreleased === true,
-        finishedOnly: stored.finishedOnly === true,
+        hideUnreleased: stored.hideUnreleased !== false,
+        finishedOnly: stored.finishedOnly !== false,
         titleMode: stored.titleMode || "english",
         animSpeedMs: typeof stored.animSpeedMs === "number"
           ? stored.animSpeedMs
           : (typeof stored.animSpeed === "number" ? Math.round(stored.animSpeed * 1000) : 450),
-        minMembers: typeof stored.minMembers === "number" ? stored.minMembers : 0,
-        fontSize: typeof stored.fontSize === "number" ? stored.fontSize : 12
+        minMembers: typeof stored.minMembers === "number" ? stored.minMembers : 50000,
+        fontSize: typeof stored.fontSize === "number" ? stored.fontSize : 12,
+        relatedMode: typeof stored.relatedMode === "number" ? stored.relatedMode : null
       };
     }
   } catch (_err) {
@@ -651,13 +994,14 @@ const loadUiSettings = () => {
   return {
     animations: true,
     showHints: true,
-    hideUnreleased: false,
-    finishedOnly: false,
+    hideUnreleased: true,
+    finishedOnly: true,
     titleMode: "english",
     animSpeedMs: 450,
-    minMembers: 0,
+    minMembers: 50000,
     fontSize: 12,
-    dailyMode: false
+    dailyMode: false,
+    relatedMode: null
   };
 };
 
@@ -679,6 +1023,7 @@ const applyUiSettings = () => {
   if (dom.settingHideUnreleased) dom.settingHideUnreleased.checked = !!state.uiSettings.hideUnreleased;
   if (dom.settingFinishedOnly) dom.settingFinishedOnly.checked = !!state.uiSettings.finishedOnly;
   if (dom.settingTitle) dom.settingTitle.value = state.uiSettings.titleMode || state.displayMode;
+  if (dom.settingRelatedMode) dom.settingRelatedMode.value = String(getRelatedMode());
   if (dom.settingAnimSpeed) dom.settingAnimSpeed.value = String(animMs);
   if (dom.settingMinMembers) dom.settingMinMembers.value = String(state.uiSettings.minMembers || 0);
   if (dom.settingFontSize) dom.settingFontSize.value = String(state.uiSettings.fontSize || 12);
@@ -686,6 +1031,8 @@ const applyUiSettings = () => {
   updateAvailableCount();
   renderHints();
   if (dom.dailyBtn) dom.dailyBtn.classList.toggle("active", !!state.uiSettings.dailyMode);
+  updateStreakDisplay();
+  renderLibraryList();
 };
 
 const getMaxGuesses = () => {
@@ -717,19 +1064,68 @@ const getHintValue = (hintKey) => {
 
 const setupHints = () => {
   dom.hints.innerHTML = "";
+  const headerRow = document.createElement("div");
+  headerRow.className = "hints-top";
+
   const header = document.createElement("div");
   header.className = "hints-header";
   header.textContent = "Hints";
 
+  const skipButton = document.createElement("button");
+  skipButton.type = "button";
+  skipButton.className = "hint-skip";
+  skipButton.textContent = "Skip to next hint";
+  skipButton.addEventListener("click", () => {
+    const hintList = Array.isArray(state.config.hints) ? state.config.hints : [];
+    const currentCount = getGuessCount();
+    const next = hintList.find((hint) => {
+      const unlockAt = hint.unlockAt || 0;
+      const hintState = state.hintState[hint.key] || {};
+      return !hintState.seen;
+    });
+    if (!next) return;
+    const unlockAt = next.unlockAt || 0;
+    if (unlockAt > currentCount) {
+      state.guessSkips += unlockAt - currentCount;
+    }
+    for (const hint of hintList) {
+      const hintState = state.hintState[hint.key] || { seen: false, open: false };
+      if (hint.key === next.key) {
+        hintState.seen = true;
+        hintState.open = true;
+      } else {
+        hintState.open = false;
+      }
+      state.hintState[hint.key] = hintState;
+    }
+    saveDailyProgress();
+    updateCounts();
+    renderHints();
+    if (getGuessCount() >= getMaxGuesses() && !state.gameOver) {
+      const targetTitle = state.target ? (state.target.displayTitle || state.target.titles.main) : "Unknown";
+      setStatus(`Out of guesses. It was ${targetTitle}.`, "bad");
+      state.gameOver = true;
+      lockInput(true);
+      state.resultOutcome = "lose";
+      registerLoss();
+      if (state.target) renderResult(state.target, "lose");
+      saveDailyProgress();
+    }
+  });
+
+  headerRow.appendChild(header);
+  headerRow.appendChild(skipButton);
+
   const buttonsWrap = document.createElement("div");
   buttonsWrap.className = "hint-buttons";
 
-  dom.hints.appendChild(header);
+  dom.hints.appendChild(headerRow);
   dom.hints.appendChild(buttonsWrap);
+  dom.hintSkip = skipButton;
 
   state.hintUi.clear();
   const hintList = Array.isArray(state.config.hints) ? state.config.hints : [];
-  dom.hints.style.display = "none";
+  dom.hints.style.display = "flex";
 
   for (const hint of hintList) {
     const button = document.createElement("button");
@@ -743,10 +1139,11 @@ const setupHints = () => {
 
     button.addEventListener("click", () => {
       const hintState = state.hintState[hint.key] || { seen: false, open: false };
-      if (state.guesses.length < (hint.unlockAt || 0)) return;
+      if (getGuessCount() < (hint.unlockAt || 0)) return;
       hintState.open = !hintState.open;
       if (hintState.open) hintState.seen = true;
       state.hintState[hint.key] = hintState;
+      saveDailyProgress();
       renderHints();
     });
 
@@ -758,16 +1155,19 @@ const setupHints = () => {
 
 const renderHints = () => {
   const hintList = Array.isArray(state.config.hints) ? state.config.hints : [];
-  const hasUnlocked = hintList.some((hint) => state.guesses.length >= (hint.unlockAt || 0));
-  const hasSeen = hintList.some((hint) => (state.hintState[hint.key] || {}).seen);
-  const shouldShow = state.uiSettings.showHints && hintList.length && (hasUnlocked || hasSeen);
+  const guessCount = getGuessCount();
+  const shouldShow = state.uiSettings.showHints && hintList.length;
   dom.hints.style.display = shouldShow ? "flex" : "none";
   if (!state.uiSettings.showHints) return;
+  if (dom.hintSkip) {
+    const hasNext = hintList.some((hint) => !(state.hintState[hint.key] || {}).seen);
+    dom.hintSkip.disabled = !hasNext;
+  }
   for (const hint of hintList) {
     const ui = state.hintUi.get(hint.key);
     if (!ui) continue;
     const unlockAt = hint.unlockAt || 0;
-    const isUnlocked = state.guesses.length >= unlockAt;
+    const isUnlocked = guessCount >= unlockAt;
     const hintState = state.hintState[hint.key] || { seen: false, open: false };
 
     ui.button.disabled = !isUnlocked;
@@ -779,6 +1179,38 @@ const renderHints = () => {
     ui.content.textContent = getHintValue(hint.key);
     ui.content.classList.toggle("open", hintState.open && isUnlocked);
   }
+};
+
+const renderLibraryList = () => {
+  if (!dom.libraryBody) return;
+  renderHeader(dom.libraryHeader, "library");
+  dom.libraryBody.innerHTML = "";
+  const query = (dom.librarySearch ? dom.librarySearch.value : "").toLowerCase().trim();
+  let sortState = state.librarySort || { key: "title", dir: "default" };
+  if (sortState.key !== "title") {
+    const cat = (state.config.categories || []).find((c) => c.key === sortState.key);
+    if (!isSortableCategory(cat)) {
+      sortState = { key: "title", dir: "default" };
+      state.librarySort = sortState;
+    }
+  }
+  const items = getFilteredEntries(true)
+    .map((entry, idx) => ({ ...entry, _libIndex: idx }))
+    .filter((entry) => {
+      if (!query) return true;
+      const title = (entry.displayTitle || entry.titles.main || "").toLowerCase();
+      const tags = JSON.stringify(entry.categories || {}).toLowerCase();
+      return title.includes(query) || tags.includes(query);
+    })
+    .map((entry) => entry);
+
+  const sorted = sortEntries(
+    items,
+    sortState,
+    (a, b) => a._libIndex - b._libIndex
+  );
+
+  sorted.forEach((entry) => renderLibraryRow(entry));
 };
 
 const formatDetailValue = (value) => {
@@ -982,6 +1414,9 @@ const resetGame = () => {
   state.guessedIds = new Set();
   state.gameOver = false;
   state.resultOutcome = "";
+  state.dailyId = null;
+  state.guessSkips = 0;
+  state.boardSort = { key: "title", dir: "default" };
   dom.boardBody.innerHTML = "";
   dom.result.hidden = true;
   dom.result.innerHTML = "";
@@ -989,7 +1424,7 @@ const resetGame = () => {
   buildPools();
   buildSearchIndex();
   state.target = pickTarget();
-  renderHeader();
+  renderHeader(dom.boardHeader, "game");
   updateCounts();
   setupHints();
   renderHints();
@@ -1001,6 +1436,42 @@ const resetGame = () => {
 const setDailyMode = (enabled) => {
   state.uiSettings.dailyMode = !!enabled;
   if (dom.dailyBtn) dom.dailyBtn.classList.toggle("active", state.uiSettings.dailyMode);
+  updateStreakDisplay();
+  updateAvailableCount();
+  updateHash();
+};
+
+const setLibraryMode = (enabled) => {
+  state.libraryMode = !!enabled;
+  if (dom.libraryBtn) {
+    dom.libraryBtn.classList.toggle("library-active", state.libraryMode);
+    dom.libraryBtn.setAttribute("aria-label", state.libraryMode ? "Back to game" : "Library");
+  }
+  if (state.libraryMode && dom.dailyBtn) {
+    dom.dailyBtn.classList.remove("active");
+  }
+  if (dom.library) dom.library.hidden = !state.libraryMode;
+  const hideGame = state.libraryMode;
+  if (dom.searchPanel) dom.searchPanel.hidden = hideGame;
+  if (dom.status) dom.status.hidden = hideGame || !dom.status.textContent;
+  if (dom.result) dom.result.hidden = hideGame || !state.gameOver;
+  if (dom.hints) dom.hints.hidden = hideGame;
+  if (dom.board) dom.board.hidden = hideGame;
+  if (state.libraryMode) {
+    renderLibraryList();
+  } else {
+    renderHints();
+  }
+  updateHash();
+};
+
+const updateHash = () => {
+  if (state.libraryMode) {
+    if (window.location.hash !== "#libary") {
+      window.location.hash = "libary";
+    }
+    return;
+  }
   const hash = state.uiSettings.dailyMode ? "#daily" : "";
   if (window.location.hash !== hash) {
     if (hash) {
@@ -1016,6 +1487,9 @@ const startNewGame = (targetId) => {
   state.guessedIds = new Set();
   state.gameOver = false;
   state.resultOutcome = "";
+  state.dailyId = targetId || null;
+  state.guessSkips = 0;
+  state.boardSort = { key: "title", dir: "default" };
   dom.boardBody.innerHTML = "";
   dom.result.hidden = true;
   dom.result.innerHTML = "";
@@ -1027,7 +1501,7 @@ const startNewGame = (targetId) => {
   } else {
     state.target = pickTarget();
   }
-  renderHeader();
+  renderHeader(dom.boardHeader, "game");
   updateCounts();
   setupHints();
   renderHints();
@@ -1036,6 +1510,46 @@ const startNewGame = (targetId) => {
   if (dom.newRoundBtn) dom.newRoundBtn.hidden = true;
   if (!state.target) {
     setStatus("Daily id not available with current filters.", "warn");
+  }
+};
+
+const restoreDailyProgress = (progress) => {
+  if (!progress || !progress.id) return;
+  state.dailyId = progress.id;
+  state.guessSkips = typeof progress.skipCount === "number" ? progress.skipCount : 0;
+  state.hintState = progress.hintState && typeof progress.hintState === "object" ? progress.hintState : {};
+  state.guesses = [];
+  state.guessedIds = new Set();
+  dom.boardBody.innerHTML = "";
+
+  const guessIds = Array.isArray(progress.guesses) ? progress.guesses : [];
+  guessIds.forEach((id) => {
+    const entry = getEntryById(id);
+    if (!entry) return;
+    state.guesses.push(entry);
+    state.guessedIds.add(entry.id);
+    removeFromGuessPool(entry);
+  });
+  renderGuessBoard();
+
+  state.gameOver = !!progress.gameOver;
+  state.resultOutcome = progress.resultOutcome || "";
+  updateCounts();
+  renderHints();
+
+  if (state.gameOver && state.target) {
+    const targetTitle = state.target.displayTitle || state.target.titles.main;
+    if (state.resultOutcome === "win") {
+      setStatus(`Correct! It was ${targetTitle}.`, "good");
+      renderResult(state.target, "win");
+    } else if (state.resultOutcome === "lose") {
+      setStatus(`Out of guesses. It was ${targetTitle}.`, "bad");
+      renderResult(state.target, "lose");
+    }
+    lockInput(true);
+  } else {
+    lockInput(false);
+    setStatus("", "");
   }
 };
 
@@ -1049,7 +1563,7 @@ const rebuildPoolsPreserve = () => {
   } else if (targetId) {
     const updatedTarget = state.answerPool.find((entry) => entry.id === targetId);
     if (updatedTarget) state.target = updatedTarget;
-    refreshGuessRows();
+    renderGuessBoard();
   }
   updateCounts();
 };
@@ -1063,8 +1577,9 @@ const applyTitleMode = (mode) => {
 
   rebuildPoolsPreserve();
   state.guesses = state.guesses.map((guess) => state.answerPool.find((entry) => entry.id === guess.id) || guess);
-  refreshGuessRows();
+  renderGuessBoard();
   renderHints();
+  renderLibraryList();
   if (!dom.result.hidden && state.target) {
     renderResult(state.target, state.resultOutcome || "");
   }
@@ -1120,6 +1635,7 @@ const renderSuggestions = () => {
 };
 
 const updateSuggestions = () => {
+  updateAvailableCount();
   if (dom.input.disabled) {
     clearSuggestions();
     return;
@@ -1145,13 +1661,13 @@ const updateSuggestions = () => {
   }
 
   matches.sort((a, b) => a.score - b.score || (a.entry.displayTitle || "").localeCompare(b.entry.displayTitle || ""));
-  state.suggestions = matches.slice(0, 8).map((match) => match.entry);
+  state.suggestions = matches.slice(0, 12).map((match) => match.entry);
   state.highlightIndex = 0;
   renderSuggestions();
 };
 
 const removeFromGuessPool = (entry) => {
-  const mode = Number(state.config.relatedMode || 3);
+  const mode = getRelatedMode();
   if (mode === 1) {
     state.guessPool = state.guessPool.filter((item) => item.id !== entry.id);
   } else {
@@ -1163,12 +1679,12 @@ const removeFromGuessPool = (entry) => {
 const guessEntry = (entry) => {
   if (!entry) return;
   if (state.gameOver) return;
-  if (state.guesses.length >= getMaxGuesses()) {
+  if (getGuessCount() >= getMaxGuesses()) {
     setStatus("No guesses left.", "bad");
     lockInput(true);
     return;
   }
-  const mode = Number(state.config.relatedMode || 3);
+  const mode = getRelatedMode();
   const guessId = mode === 1 ? entry.id : entry.id;
 
   if (state.guessedIds.has(guessId)) {
@@ -1180,7 +1696,9 @@ const guessEntry = (entry) => {
 
   state.guessedIds.add(guessId);
   state.guesses.push(entry);
-  renderGuessRow(entry);
+  state.boardSort = { key: "title", dir: "default" };
+  renderHeader(dom.boardHeader, "game");
+  renderGuessBoard();
   updateCounts();
   renderHints();
   removeFromGuessPool(entry);
@@ -1201,20 +1719,24 @@ const guessEntry = (entry) => {
     state.gameOver = true;
     lockInput(true);
     state.resultOutcome = "win";
+    markWin(state.target);
+    registerWin();
     renderResult(state.target, "win");
   } else {
-    if (state.guesses.length >= getMaxGuesses()) {
+    if (getGuessCount() >= getMaxGuesses()) {
       const targetTitle = state.target.displayTitle || state.target.titles.main;
       setStatus(`Out of guesses. It was ${targetTitle}.`, "bad");
       state.gameOver = true;
       lockInput(true);
       state.resultOutcome = "lose";
+      registerLoss();
       renderResult(state.target, "lose");
     } else {
       setStatus("Not quite. Try again.", "");
     }
   }
 
+  saveDailyProgress();
   dom.input.value = "";
   clearSuggestions();
 };
@@ -1240,6 +1762,7 @@ const handleKeydown = (event) => {
 };
 
 const handleGlobalTyping = (event) => {
+  if (state.libraryMode) return;
   if (event.defaultPrevented) return;
   if (event.ctrlKey || event.metaKey || event.altKey) return;
   const tag = event.target.tagName;
@@ -1260,6 +1783,8 @@ const init = async () => {
   state.config = config;
   state.gameOver = false;
   state.resultOutcome = "";
+  state.streaks = loadStreaks();
+  state.libraryWins = loadLibraryWins();
   const loadedSettings = loadUiSettings();
   state.uiSettings = {
     ...loadedSettings,
@@ -1277,10 +1802,12 @@ const init = async () => {
   buildPools();
   buildSearchIndex();
   buildRulesContent();
+  renderLibraryList();
 
   state.target = pickTarget();
 
-  renderHeader();
+  renderHeader(dom.boardHeader, "game");
+  renderHeader(dom.libraryHeader, "library");
   updateCounts();
   setupHints();
   renderHints();
@@ -1298,11 +1825,21 @@ window.addEventListener("DOMContentLoaded", () => {
   dom.suggestions = document.querySelector("#suggestions");
   dom.boardHeader = document.querySelector("#board-header");
   dom.boardBody = document.querySelector("#board-body");
+  dom.searchPanel = document.querySelector("#search-panel");
+  dom.board = document.querySelector("#board");
+  dom.library = document.querySelector("#library");
+  dom.libraryHeader = document.querySelector("#library-header");
+  dom.libraryBody = document.querySelector("#library-body");
+  dom.librarySearch = document.querySelector("#library-search");
+  dom.libraryBtn = document.querySelector("#library-btn");
+  dom.settingsDailyNote = document.querySelector("#settings-daily-note");
   dom.guessCount = document.querySelector("#guess-count");
   dom.totalCount = document.querySelector("#total-count");
   dom.status = document.querySelector("#status");
   dom.hints = document.querySelector("#hints");
   dom.result = document.querySelector("#result");
+  dom.streakLabel = document.querySelector("#streak-label");
+  dom.streakCount = document.querySelector("#streak-count");
   dom.preview = document.querySelector("#preview");
   dom.settingsBtn = document.querySelector("#settings-btn");
   dom.dailyBtn = document.querySelector("#daily-btn");
@@ -1317,12 +1854,12 @@ window.addEventListener("DOMContentLoaded", () => {
   dom.settingHideUnreleased = document.querySelector("#setting-hide-unreleased");
   dom.settingFinishedOnly = document.querySelector("#setting-finished-only");
   dom.settingTitle = document.querySelector("#setting-title");
+  dom.settingRelatedMode = document.querySelector("#setting-related-mode");
   dom.settingAnimSpeed = document.querySelector("#setting-anim-speed");
   dom.settingAnimSpeedValue = document.querySelector("#setting-anim-speed-value");
   dom.settingMinMembers = document.querySelector("#setting-min-members");
-  dom.settingMembersCount = document.querySelector("#setting-members-count");
   dom.settingFontSize = document.querySelector("#setting-font-size");
-  dom.settingTitleCount = document.querySelector("#setting-title-count");
+  dom.settingFilterCount = document.querySelector("#setting-filter-count");
   dom.newRoundBtn = document.querySelector("#new-round-btn");
 
   dom.input.addEventListener("input", updateSuggestions);
@@ -1341,11 +1878,15 @@ window.addEventListener("DOMContentLoaded", () => {
   const openSettings = () => {
     if (!dom.settingsModal) return;
     dom.settingsModal.hidden = false;
+    renderHints();
+    updateAvailableCount();
+    if (dom.settingsDailyNote) dom.settingsDailyNote.hidden = !state.uiSettings.dailyMode;
   };
 
   const closeSettings = () => {
     if (!dom.settingsModal) return;
     dom.settingsModal.hidden = true;
+    if (dom.settingsDailyNote) dom.settingsDailyNote.hidden = true;
   };
 
   const openRules = () => {
@@ -1364,9 +1905,21 @@ window.addEventListener("DOMContentLoaded", () => {
   if (dom.rulesBtn) {
     dom.rulesBtn.addEventListener("click", openRules);
   }
+  if (dom.libraryBtn) {
+    dom.libraryBtn.addEventListener("click", () => {
+      if (state.libraryMode) {
+        setLibraryMode(false);
+      } else {
+        setLibraryMode(true);
+      }
+    });
+  }
   if (dom.dailyBtn) {
     dom.dailyBtn.addEventListener("click", async () => {
       try {
+        if (state.libraryMode) {
+          setLibraryMode(false);
+        }
         if (state.uiSettings.dailyMode) {
           setDailyMode(false);
           saveUiSettings();
@@ -1378,9 +1931,15 @@ window.addEventListener("DOMContentLoaded", () => {
         const data = await res.json();
         const dailyId = typeof data === "string" ? data : (data && data.id ? data.id : null);
         if (!dailyId) throw new Error("daily.json invalid");
+        const storedDaily = loadDailyProgress();
         setDailyMode(true);
         saveUiSettings();
         startNewGame(String(dailyId));
+        if (storedDaily && storedDaily.id === String(dailyId)) {
+          restoreDailyProgress(storedDaily);
+        } else {
+          saveDailyProgress();
+        }
       } catch (err) {
         console.error(err);
         setStatus("Daily id not found. Run daily.js to generate.", "warn");
@@ -1461,6 +2020,19 @@ window.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  if (dom.settingRelatedMode) {
+    dom.settingRelatedMode.addEventListener("change", () => {
+      const nextMode = parseInt(dom.settingRelatedMode.value, 10);
+      state.uiSettings.relatedMode = Number.isFinite(nextMode) ? nextMode : null;
+      saveUiSettings();
+      if (state.uiSettings.dailyMode) {
+        startNewGame(state.dailyId);
+      } else {
+        resetGame();
+      }
+    });
+  }
+
   if (dom.settingAnimSpeed) {
     dom.settingAnimSpeed.addEventListener("input", () => {
       state.uiSettings.animSpeedMs = parseInt(dom.settingAnimSpeed.value || "450", 10) || 450;
@@ -1496,8 +2068,14 @@ window.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  const handleDailyHash = async () => {
-    if (window.location.hash !== "#daily") return;
+  const handleHashChange = async () => {
+    const hash = window.location.hash;
+    if (hash === "#libary") {
+      if (!state.libraryMode) setLibraryMode(true);
+      return;
+    }
+    if (state.libraryMode) setLibraryMode(false);
+    if (hash !== "#daily") return;
     if (!dom.dailyBtn || state.uiSettings.dailyMode) return;
     await dom.dailyBtn.click();
   };
@@ -1509,10 +2087,14 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  window.addEventListener("scroll", hidePreview, true);
-  window.addEventListener("hashchange", handleDailyHash);
+  if (dom.librarySearch) {
+    dom.librarySearch.addEventListener("input", renderLibraryList);
+  }
 
-  init().then(handleDailyHash).catch((error) => {
+  window.addEventListener("scroll", hidePreview, true);
+  window.addEventListener("hashchange", handleHashChange);
+
+  init().then(handleHashChange).catch((error) => {
     console.error(error);
     setStatus("Failed to load data.", "bad");
   });

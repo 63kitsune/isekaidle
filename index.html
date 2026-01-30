@@ -12,25 +12,48 @@
     <header class="top">
       <div class="title-wrap">
         <h1>Isekaidle</h1>
-        <p>waaaaaaahhh.</p>
+        <p>guess any Isekai (according to mal)</p>
       </div>
-      <div class="right-controls">
-        <div class="stats">
+      <div class="center-stats">
+        <div class="stats stats-center">
           <div class="stat"><span id="guess-count">0</span>/<span id="total-count">0</span></div>
           <div class="stat-label">Guesses</div>
         </div>
+        <div class="streak">
+          <span id="streak-label">Current streak</span>
+          <span id="streak-count">0</span>
+        </div>
+      </div>
+      <div class="right-controls">
         <div class="top-actions">
-          <button id="daily-btn" class="settings-btn" type="button">Daily</button>
-          <button id="settings-btn" class="settings-btn" type="button">Settings</button>
-          <button id="rules-btn" class="settings-btn" type="button">Rules</button>
+          <button id="daily-btn" class="settings-btn top-icon" type="button" aria-label="Daily">
+            <span class="top-icon-label">Daily</span>
+            <img class="top-icon-img" src="assets/daily.svg" alt="" aria-hidden="true" />
+          </button>
+          <button id="settings-btn" class="settings-btn top-icon" type="button" aria-label="Settings">
+            <span class="top-icon-label">Settings</span>
+            <img class="top-icon-img" src="assets/settings.svg" alt="" aria-hidden="true" />
+          </button>
+          <button id="rules-btn" class="settings-btn top-icon" type="button" aria-label="Rules">
+            <span class="top-icon-label">Rules</span>
+            <img class="top-icon-img" src="assets/rules.svg" alt="" aria-hidden="true" />
+          </button>
+          <button id="library-btn" class="settings-btn top-icon" type="button" aria-label="Library">
+            <span class="top-icon-label">Library</span>
+            <img class="top-icon-img" src="assets/library.svg" alt="" aria-hidden="true" />
+          </button>
+          <a id="issues-link" class="settings-btn top-icon top-icon-link" href="https://github.com/63kitsune/isekaidle/issues" target="_blank" rel="noreferrer" aria-label="Issues">
+            <span class="top-icon-label">Issues</span>
+            <img class="top-icon-img" src="assets/warning.svg" alt="" aria-hidden="true" />
+          </a>
         </div>
       </div>
     </header>
 
-    <section class="search-panel">
+    <section id="search-panel" class="search-panel">
       <div class="search-box">
         <input id="search-input" type="text" placeholder="Search for an anime..." autocomplete="off" />
-        <button id="clear-btn" class="icon-btn icon-btn-clear" type="button" aria-label="Clear"><img src="assets/close.svg" alt="Clear"></button>
+        <button id="clear-btn" class="icon-btn-clear" type="button" aria-label="Clear"></button>
       </div>
       <button id="guess-btn" type="button">Guess</button>
       <div id="suggestions" class="suggestions"></div>
@@ -42,7 +65,20 @@
     </section>
     <section id="hints" class="hints"></section>
 
-    <section class="board">
+    <section id="library" class="library" hidden>
+      <div class="library-header">
+        <div class="library-title">Library <span class="library-title-sub">(filtered by settings)</span></div>
+        <div class="library-controls">
+          <input id="library-search" class="library-search" type="text" placeholder="Search titles..." />
+        </div>
+      </div>
+      <div class="library-board">
+        <div id="library-header" class="board-header"></div>
+        <div id="library-body" class="board-body library-body"></div>
+      </div>
+    </section>
+
+    <section id="board" class="board">
       <div id="board-header"></div>
       <div id="board-body" class="board-body"></div>
     </section>
@@ -52,68 +88,82 @@
     <div class="modal-backdrop" data-close="true"></div>
     <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
       <div class="modal-header">
-      <div id="settings-title" class="modal-title">
-        Settings <span id="setting-title-count" class="setting-value"></span>
-      </div>
+      <div id="settings-title" class="modal-title">Settings</div>
         <button id="settings-close" type="button" class="modal-close icon-btn" data-close="true" aria-label="Close settings"></button>
       </div>
       <div class="modal-body">
-        <label class="setting setting-toggle">
-          <span>Animations</span>
-          <span class="toggle">
-            <input id="setting-animations" type="checkbox" />
-            <span class="toggle-track"></span>
-          </span>
-        </label>
-        <label class="setting">
-          <span>Animation speed</span>
-          <span class="setting-inline">
-            <input id="setting-anim-speed" type="number" min="0" max="2000" step="50" />
-            <span id="setting-anim-speed-value" class="setting-value">ms</span>
-          </span>
-        </label>
-        <label class="setting setting-toggle">
-          <span>Hints</span>
-          <span class="toggle">
-            <input id="setting-hints" type="checkbox" />
-            <span class="toggle-track"></span>
-          </span>
-        </label>
-        <label class="setting setting-toggle">
-          <span>Hide unreleased</span>
-          <span class="toggle">
-            <input id="setting-hide-unreleased" type="checkbox" />
-            <span class="toggle-track"></span>
-          </span>
-        </label>
-        <label class="setting setting-toggle">
-          <span>Finished only</span>
-          <span class="toggle">
-            <input id="setting-finished-only" type="checkbox" />
-            <span class="toggle-track"></span>
-          </span>
-        </label>
-        <label class="setting">
-          <span>Title</span>
-          <select id="setting-title">
-            <option value="english">English</option>
-            <option value="japanese">Japanese</option>
-          </select>
-        </label>
-        <label class="setting">
-          <span>Font size</span>
-          <span class="setting-inline">
-            <input id="setting-font-size" type="number" min="10" max="16" step="1" />
-            <span class="setting-value">px</span>
-          </span>
-        </label>
-        <label class="setting">
-          <span class="setting-label">
-            <span>Min members</span>
-            <span id="setting-members-count" class="setting-value"></span>
-          </span>
-          <input id="setting-min-members" type="number" min="0" step="1000" />
-        </label>
+        <div class="settings-section">
+          <div class="settings-section-title">General</div>
+          <label class="setting setting-toggle">
+            <span>Animations</span>
+            <span class="toggle">
+              <input id="setting-animations" type="checkbox" />
+              <span class="toggle-track"></span>
+            </span>
+          </label>
+          <label class="setting">
+            <span>Animation speed</span>
+            <span class="setting-inline">
+              <input id="setting-anim-speed" type="number" min="0" max="2000" step="50" />
+              <span id="setting-anim-speed-value" class="setting-value">ms</span>
+            </span>
+          </label>
+          <label class="setting setting-toggle">
+            <span>Hints</span>
+            <span class="toggle">
+              <input id="setting-hints" type="checkbox" />
+              <span class="toggle-track"></span>
+            </span>
+          </label>
+          <label class="setting">
+            <span>Title</span>
+            <select id="setting-title">
+              <option value="english">English</option>
+              <option value="japanese">Japanese</option>
+            </select>
+          </label>
+          <label class="setting">
+            <span>Related mode</span>
+            <select id="setting-related-mode">
+              <option value="1">Series groups — related titles are merged</option>
+              <option value="2">Related counts — any title in the series wins</option>
+              <option value="3">Exact match — only the exact entry wins</option>
+            </select>
+          </label>
+          <label class="setting">
+            <span>Font size</span>
+            <span class="setting-inline">
+              <input id="setting-font-size" type="number" min="10" max="16" step="1" />
+              <span class="setting-value">px</span>
+            </span>
+          </label>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Anime filters <span id="setting-filter-count" class="setting-value"></span></div>
+          <label class="setting setting-toggle">
+            <span>Hide unreleased</span>
+            <span class="toggle">
+              <input id="setting-hide-unreleased" type="checkbox" />
+              <span class="toggle-track"></span>
+            </span>
+          </label>
+          <label class="setting setting-toggle">
+            <span>Finished only</span>
+            <span class="toggle">
+              <input id="setting-finished-only" type="checkbox" />
+              <span class="toggle-track"></span>
+            </span>
+          </label>
+          <label class="setting">
+            <span class="setting-label">
+              <span>Min members</span>
+            </span>
+            <input id="setting-min-members" type="number" min="0" step="1000" />
+          </label>
+        </div>
+
+        <div id="settings-daily-note" class="daily-note" hidden>Daily mode ignores filter settings. it uses the default once</div>
       </div>
     </div>
   </div>
