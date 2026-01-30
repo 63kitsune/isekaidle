@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Isekaidle | 404</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" type="image/png" href="favicon.ico" />
+</head>
+<body class="error-page">
+  <main class="error-shell">
+    <section class="error-card">
+      <div class="error-code">404</div>
+      <h1 class="error-title">Lost in another world</h1>
+      <p class="error-text">That page got reincarnated somewhere else. Head back and keep guessing.</p>
+      <div class="error-gif-wrap">
+        <div class="error-gif-sheen"></div>
+        <img id="error-gif" alt="Mad reaction gif" />
+      </div>
+      <div class="error-actions">
+        <a class="settings-btn" href="./">Return to game</a>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const gif = document.getElementById("error-gif");
+    const fallback = "https://cdn.otakugifs.xyz/gifs/mad/1531fdd7b44e9548.gif";
+
+    const loadGif = async () => {
+      try {
+        const res = await fetch("https://api.otakugifs.xyz/gif?reaction=mad&format=gif", {
+          cache: "no-store"
+        });
+        if (!res.ok) throw new Error("gif api error");
+        const data = await res.json();
+        gif.src = data && data.url ? data.url : fallback;
+      } catch (err) {
+        gif.src = fallback;
+      }
+    };
+
+    loadGif();
+  </script>
+</body>
+</html>
