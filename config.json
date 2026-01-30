@@ -1,0 +1,141 @@
+{
+  "displayTitle": "english",
+  "showArrows": true,
+  "relatedMode": 3,
+  "maxGuesses": 22,
+  "titleWeight": 3.0,
+  "relatedRelations": ["Prequel", "Sequel"],
+  "seasonRelations": ["Prequel", "Sequel"],
+  "seasonExcludeTypes": ["Movie"],
+  "hints": [
+    { "key": "year", "label": "Year", "unlockAt": 5 },
+    { "key": "synopsis", "label": "Synopsis", "unlockAt": 10 }
+  ],
+  "numericSimilarity": {
+    "year": 1,
+    "score": 0.5,
+    "seasons": 1
+  },
+  "categories": [
+    {
+      "key": "year",
+      "label": "Year",
+      "type": "number",
+      "source": ["year"],
+      "width": 0.6
+    },
+    {
+      "key": "studio",
+      "label": "Studio",
+      "type": "text",
+      "source": ["properties.studio.text", "properties.studios.text"],
+      "width": 1.1
+    },
+    {
+      "key": "source",
+      "label": "Source",
+      "type": "text",
+      "source": ["properties.source.text"],
+      "width": 1.0
+    },
+    {
+      "key": "score",
+      "label": "Score",
+      "type": "number",
+      "source": ["score", "score_display"],
+      "width": 0.7
+    },
+    {
+      "key": "members",
+      "label": "Members",
+      "type": "number",
+      "source": ["members"],
+      "width": 0.9
+    },
+    {
+      "key": "genres",
+      "label": "Genres",
+      "type": "list",
+      "source": ["genres.name"],
+      "width": 1.5
+    },
+    {
+      "key": "tags",
+      "label": "Tags",
+      "type": "list",
+      "source": [
+        "information.themes.links.name",
+        "information.themes.text",
+        "properties.theme.text",
+        "properties.themes.text",
+        "information.demographic.links.name",
+        "information.demographic.text",
+        "properties.demographic.text"
+      ],
+      "width": 1.1
+    },
+    {
+      "key": "seasons",
+      "label": "Seasons",
+      "type": "number",
+      "source": ["__seasonCount"],
+      "width": 0.7
+    },
+    {
+      "key": "episodes",
+      "label": "Episodes",
+      "type": "number",
+      "source": ["episodes", "information.episodes.text"],
+      "width": 0.6
+    },
+    {
+      "key": "RM",
+      "label": "Reincarnation Method",
+      "type": "text",
+      "source": ["ai.RM"],
+      "width": 1.0
+    },
+    {
+      "key": "CK",
+      "label": "Cheat Skill",
+      "type": "text",
+      "source": ["ai.CK"],
+      "width": 0.9
+    },
+    {
+      "key": "SR",
+      "label": "Starting Race",
+      "type": "text",
+      "source": ["ai.SR"],
+      "width": 1.0
+    },
+    {
+      "key": "EG",
+      "label": "Ending Goal",
+      "type": "text",
+      "source": ["ai.EG"],
+      "width": 1.2
+    },
+    {
+      "key": "W",
+      "label": "World",
+      "type": "text",
+      "source": ["ai.W"],
+      "width": 1.1
+    }
+  ],
+  "similarityGroups": {
+    "W": [
+      ["parallel world", "another world", "alternate universe", "other world", "different world"],
+      ["fantasy world", "magical world", "magic world"],
+      ["game world", "virtual world", "game-like world"]
+    ],
+    "RM": [
+      ["summoning", "summoned"],
+      ["reincarnation", "reborn", "rebirth"]
+    ],
+    "CK": [
+      ["special ability", "cheat skill", "cheat power", "overpowered", "unique skill"]
+    ]
+  }
+}

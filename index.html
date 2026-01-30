@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Isekaidle</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="app">
+    <header class="top">
+      <div class="title-wrap">
+        <h1>Isekaidle</h1>
+        <p>waaaaaaahhh.</p>
+      </div>
+      <div class="right-controls">
+        <div class="stats">
+          <div class="stat"><span id="guess-count">0</span>/<span id="total-count">0</span></div>
+          <div class="stat-label">Guesses</div>
+        </div>
+        <div class="top-actions">
+          <button id="daily-btn" class="settings-btn" type="button">Daily</button>
+          <button id="settings-btn" class="settings-btn" type="button">Settings</button>
+        </div>
+      </div>
+    </header>
+
+    <section class="search-panel">
+      <div class="search-box">
+        <input id="search-input" type="text" placeholder="Search for an anime..." autocomplete="off" />
+        <button id="clear-btn" type="button" aria-label="Clear">x</button>
+      </div>
+      <button id="guess-btn" type="button">Guess</button>
+      <div id="suggestions" class="suggestions"></div>
+    </section>
+
+    <div id="status" class="status" hidden></div>
+    <section id="result" class="result" hidden>
+      <button id="new-round-btn" class="settings-btn result-new-round" type="button" hidden>New Round</button>
+    </section>
+    <section id="hints" class="hints"></section>
+
+    <section class="board">
+      <div id="board-header"></div>
+      <div id="board-body" class="board-body"></div>
+    </section>
+  </main>
+
+  <div id="settings-modal" class="modal" hidden>
+    <div class="modal-backdrop" data-close="true"></div>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <div class="modal-header">
+      <div id="settings-title" class="modal-title">
+        Settings <span id="setting-title-count" class="setting-value"></span>
+      </div>
+        <button id="settings-close" type="button" class="modal-close" data-close="true">x</button>
+      </div>
+      <div class="modal-body">
+        <label class="setting setting-toggle">
+          <span>Animations</span>
+          <span class="toggle">
+            <input id="setting-animations" type="checkbox" />
+            <span class="toggle-track"></span>
+          </span>
+        </label>
+        <label class="setting">
+          <span>Animation speed</span>
+          <span class="setting-inline">
+            <input id="setting-anim-speed" type="number" min="0" max="2000" step="50" />
+            <span id="setting-anim-speed-value" class="setting-value">ms</span>
+          </span>
+        </label>
+        <label class="setting setting-toggle">
+          <span>Hints</span>
+          <span class="toggle">
+            <input id="setting-hints" type="checkbox" />
+            <span class="toggle-track"></span>
+          </span>
+        </label>
+        <label class="setting setting-toggle">
+          <span>Hide unreleased</span>
+          <span class="toggle">
+            <input id="setting-hide-unreleased" type="checkbox" />
+            <span class="toggle-track"></span>
+          </span>
+        </label>
+        <label class="setting setting-toggle">
+          <span>Finished only</span>
+          <span class="toggle">
+            <input id="setting-finished-only" type="checkbox" />
+            <span class="toggle-track"></span>
+          </span>
+        </label>
+        <label class="setting">
+          <span>Title</span>
+          <select id="setting-title">
+            <option value="english">English</option>
+            <option value="japanese">Japanese</option>
+          </select>
+        </label>
+        <label class="setting">
+          <span>Font size</span>
+          <span class="setting-inline">
+            <input id="setting-font-size" type="number" min="10" max="16" step="1" />
+            <span class="setting-value">px</span>
+          </span>
+        </label>
+        <label class="setting">
+          <span class="setting-label">
+            <span>Min members</span>
+            <span id="setting-members-count" class="setting-value"></span>
+          </span>
+          <input id="setting-min-members" type="number" min="0" step="1000" />
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <div id="preview" class="preview" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
