@@ -1,15 +1,17 @@
 {
   "displayTitle": "english",
   "showArrows": true,
-  "relatedMode": 3,
-  "maxGuesses": 22,
+  "relatedMode": 2,
+  "maxGuesses": 18,
   "titleWeight": 3.0,
   "relatedRelations": ["Prequel", "Sequel"],
   "seasonRelations": ["Prequel", "Sequel"],
   "seasonExcludeTypes": ["Movie"],
   "hints": [
     { "key": "year", "label": "Year", "unlockAt": 5 },
-    { "key": "synopsis", "label": "Synopsis", "unlockAt": 10 }
+    { "key": "studio", "label": "Studio", "unlockAt": 8 },
+    { "key": "source", "label": "Source", "unlockAt": 10 },
+    { "key": "synopsis", "label": "Synopsis", "unlockAt": 16 }
   ],
   "numericSimilarity": {
     "year": 1,
