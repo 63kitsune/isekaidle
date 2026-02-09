@@ -67,7 +67,7 @@
 
     <section id="library" class="library" hidden>
       <div class="library-header">
-        <div class="library-title">Library <span class="library-title-sub">(filtered by settings)</span></div>
+        <div class="library-title">Library <span class="library-title-sub">(filtered by settings)</span> <span id="library-solved-count" class="library-count"></span></div>
         <div class="library-controls">
           <input id="library-search" class="library-search" type="text" placeholder="Search titles..." />
         </div>
@@ -136,6 +136,17 @@
               <input id="setting-font-size" type="number" min="10" max="16" step="1" />
               <span class="setting-value">px</span>
             </span>
+          </label>
+          <label class="setting">
+            <span>Library order</span>
+            <select id="setting-library-order">
+              <option value="solved,failed,unsolved">Solved → Failed → Unsolved (default)</option>
+              <option value="solved,unsolved,failed">Solved → Unsolved → Failed</option>
+              <option value="failed,solved,unsolved">Failed → Solved → Unsolved</option>
+              <option value="failed,unsolved,solved">Failed → Unsolved → Solved</option>
+              <option value="unsolved,solved,failed">Unsolved → Solved → Failed</option>
+              <option value="unsolved,failed,solved">Unsolved → Failed → Solved</option>
+            </select>
           </label>
         </div>
 
