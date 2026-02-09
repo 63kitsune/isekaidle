@@ -17,8 +17,10 @@ const state = {
   guessSkips: 0,
   libraryMode: false,
   libraryWins: new Set(),
+  libraryFails: new Set(),
   streaks: { current: 0, daily: 0, lastDailyId: null },
   librarySort: { key: "title", dir: "default" },
+  libraryOrder: ["solved", "failed", "unsolved"],
   boardSort: { key: "title", dir: "default" },
   uiSettings: {
     animations: true,
@@ -47,6 +49,8 @@ const dom = {
   libraryHeader: null,
   libraryBody: null,
   librarySearch: null,
+  librarySolvedCount: null,
+  settingLibraryOrder: null,
   libraryBtn: null,
   settingsDailyNote: null,
   guessCount: null,
@@ -83,6 +87,7 @@ const dom = {
 const SETTINGS_KEY = "isekai-guess-ui";
 const DAILY_PROGRESS_KEY = "isekai-daily-progress";
 const LIBRARY_WINS_KEY = "isekai-library-wins";
+const LIBRARY_FAILS_KEY = "isekai-library-fails";
 const STREAK_KEY = "isekai-streaks";
 
 const seasonPattern = /(\bseason\s*1\b|\b1st\s*season\b|\bfirst\s*season\b|\bs1\b|\bseason\s*one\b|\bpart\s*1\b)/i;
@@ -162,6 +167,83 @@ const uniqueList = (items) => {
   return out;
 };
 
+const normalizeTextList = (value) => {
+  if (value === null || value === undefined) return [];
+  if (Array.isArray(value)) return uniqueList(value);
+  const text = value.toString().trim();
+  if (!text) return [];
+  if (text.includes(",")) {
+    return uniqueList(text.split(","));
+  }
+  return uniqueList([text]);
+};
+
+const appendValues = (list, value) => {
+  if (value === null || value === undefined || value === "") return list;
+  if (Array.isArray(value)) {
+    value.forEach((item) => list.push(item));
+  } else {
+    list.push(value);
+  }
+  return list;
+};
+
+const getValuesByPath = (obj, path) => {
+  if (!obj || !path) return [];
+  const parts = path.split(".");
+  let current = [obj];
+  for (const part of parts) {
+    const next = [];
+    for (const item of current) {
+      if (item === null || item === undefined) continue;
+      if (Array.isArray(item)) {
+        item.forEach((sub) => next.push(sub));
+        continue;
+      }
+      if (typeof item === "object" && part in item) {
+        next.push(item[part]);
+      }
+    }
+    current = next;
+  }
+  return current
+    .flatMap((value) => (Array.isArray(value) ? value : [value]))
+    .filter((value) => value !== undefined && value !== null && value !== "");
+};
+
+const buildCategories = (entry, config) => {
+  const categories = {};
+  const categoryConfigs = (config && config.categories) || [];
+  categoryConfigs.forEach((category) => {
+    const sources = Array.isArray(category.source) ? category.source : [];
+    let values = [];
+    sources.forEach((sourcePath) => {
+      values = values.concat(getValuesByPath(entry, sourcePath));
+    });
+    if (entry && entry[category.key] !== undefined) {
+      values = appendValues(values, entry[category.key]);
+    }
+    const pluralKey = `${category.key}s`;
+    if (entry && entry[pluralKey] !== undefined) {
+      values = appendValues(values, entry[pluralKey]);
+    }
+
+    if (category.type === "list") {
+      categories[category.key] = normalizeTextList(values);
+      return;
+    }
+    if (category.type === "number") {
+      const numeric = values
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value));
+      categories[category.key] = numeric.length ? numeric[0] : null;
+      return;
+    }
+    categories[category.key] = normalizeTextList(values);
+  });
+  return categories;
+};
+
 const computeGridTemplate = () => {
   const titleWeight = Number(state.config && state.config.titleWeight) || 1.2;
   const weights = [
@@ -231,12 +313,8 @@ const buildRulesContent = () => {
       if (!entry.categories) return;
       const raw = entry.categories[category.key];
       if (raw === null || raw === undefined) return;
-      if (category.type === "list") {
-        if (Array.isArray(raw)) {
-          raw.forEach((item) => values.push(item));
-        } else {
-          values.push(raw);
-        }
+      if (Array.isArray(raw)) {
+        raw.forEach((item) => values.push(item));
       } else {
         values.push(raw);
       }
@@ -486,6 +564,7 @@ const renderHeader = (target = dom.boardHeader, mode = "game") => {
     cell.className = "cell header-cell" + (sortable ? " sortable" : "");
     cell.textContent = label;
     cell.dataset.key = key;
+    cell.title = label;
     if (sortable) {
       if (sortState.key === key) {
         cell.dataset.sort = sortState.dir;
@@ -509,15 +588,27 @@ const renderHeader = (target = dom.boardHeader, mode = "game") => {
 
 const formatValue = (value, type) => {
   if (value === null || value === undefined || value === "") return "-";
+  if (Array.isArray(value)) {
+    return value.length ? value.join(", ") : "-";
+  }
   if (type === "number") {
     if (!Number.isFinite(value)) return "-";
     if (Number.isInteger(value)) return String(value);
     return value.toFixed(2);
   }
-  if (Array.isArray(value)) {
-    return value.length ? value : ["-"];
-  }
   return value;
+};
+
+const coerceNumber = (value) => {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const numeric = Number(item);
+      if (Number.isFinite(numeric)) return numeric;
+    }
+    return null;
+  }
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
 };
 
 const buildSimilarityMap = () => {
@@ -560,9 +651,31 @@ const compareNumeric = (category, guessValue, targetValue) => {
 };
 
 const compareText = (category, guessValue, targetValue) => {
-  if (!guessValue || !targetValue) return "miss";
-  if (normalizeSearch(guessValue) === normalizeSearch(targetValue)) return "hit";
-  return isSimilarText(category.key, guessValue, targetValue) ? "near" : "miss";
+  const guessList = normalizeTextList(guessValue);
+  const targetList = normalizeTextList(targetValue);
+  if (!guessList.length || !targetList.length) return "miss";
+
+  let hitCount = 0;
+  let near = false;
+
+  for (const guess of guessList) {
+    const normalizedGuess = normalizeSearch(guess);
+    for (const target of targetList) {
+      const normalizedTarget = normalizeSearch(target);
+      if (normalizedGuess === normalizedTarget) {
+        hitCount += 1;
+        break;
+      }
+      if (!near && isSimilarText(category.key, guess, target)) {
+        near = true;
+      }
+    }
+  }
+
+  const allMatch = hitCount === guessList.length && hitCount === targetList.length;
+  if (allMatch) return "hit";
+  if (hitCount > 0 || near) return "near";
+  return "miss";
 };
 
 const compareListItem = (category, item, targetList) => {
@@ -681,8 +794,8 @@ const renderGuessRow = (entry, insertMode = "prepend") => {
         cell.appendChild(listWrap);
       }
     } else if (category.type === "number") {
-      const numericGuess = typeof guessValue === "number" ? guessValue : null;
-      const numericTarget = typeof targetValue === "number" ? targetValue : null;
+      const numericGuess = coerceNumber(guessValue);
+      const numericTarget = coerceNumber(targetValue);
       const comparison = compareNumeric(category, numericGuess, numericTarget);
       cell.classList.add(comparison.status);
       if (comparison.arrow) cell.dataset.arrow = comparison.arrow;
@@ -707,7 +820,11 @@ const getSortValue = (entry, key) => {
   if (!entry) return "";
   if (key === "title") return entry.displayTitle || entry.titles.main || "";
   const value = entry.categories ? entry.categories[key] : null;
-  if (Array.isArray(value)) return value.join(", ");
+  if (Array.isArray(value)) {
+    const numeric = coerceNumber(value);
+    if (numeric !== null) return numeric;
+    return value.join(", ");
+  }
   return value;
 };
 
@@ -760,9 +877,18 @@ const renderGuessBoard = () => {
 const renderLibraryRow = (entry) => {
   const row = document.createElement("div");
   row.className = "board-row library-row";
+  const solved = isLibrarySolved(entry);
+  const failed = !solved && isLibraryFailed(entry);
+  if (solved) {
+    row.classList.add("library-solved");
+  } else if (failed) {
+    row.classList.add("library-failed");
+  }
   row.style.setProperty("--col-count", state.config.categories.length);
   row.style.setProperty("--total-cols", state.config.categories.length + 1);
   row.style.gridTemplateColumns = computeGridTemplate();
+  applyRowAnimationTiming(row);
+  row.classList.add("animate");
 
   const titleCell = document.createElement("div");
   titleCell.className = "cell title-cell";
@@ -850,6 +976,56 @@ const loadLibraryWins = () => {
   return new Set();
 };
 
+const loadLibraryFails = () => {
+  try {
+    const stored = JSON.parse(localStorage.getItem(LIBRARY_FAILS_KEY));
+    if (Array.isArray(stored)) {
+      return new Set(stored.map((id) => String(id)));
+    }
+  } catch (_err) {
+    // ignore
+  }
+  return new Set();
+};
+
+const collectEntryIds = (entry) => {
+  const ids = new Set();
+  if (!entry) return ids;
+  ids.add(String(entry.id));
+  if (Array.isArray(entry.members)) {
+    entry.members.forEach((member) => ids.add(String(member.id)));
+  }
+  if (entry.related && Array.isArray(entry.related.all_ids)) {
+    entry.related.all_ids.forEach((id) => ids.add(String(id)));
+  }
+  return ids;
+};
+
+const isLibrarySolved = (entry) => {
+  const ids = collectEntryIds(entry);
+  for (const id of ids) {
+    if (state.libraryWins.has(String(id))) return true;
+  }
+  return false;
+};
+
+const isLibraryFailed = (entry) => {
+  const ids = collectEntryIds(entry);
+  for (const id of ids) {
+    if (state.libraryFails.has(String(id))) return true;
+  }
+  return false;
+};
+
+const getLibrarySolveRank = (entry) => {
+  const solved = isLibrarySolved(entry);
+  const failed = !solved && isLibraryFailed(entry);
+  const order = Array.isArray(state.libraryOrder) ? state.libraryOrder : ["solved", "failed", "unsolved"];
+  const status = solved ? "solved" : (failed ? "failed" : "unsolved");
+  const idx = order.indexOf(status);
+  return idx === -1 ? 999 : idx;
+};
+
 const saveLibraryWins = () => {
   try {
     const payload = Array.from(state.libraryWins || []);
@@ -859,19 +1035,50 @@ const saveLibraryWins = () => {
   }
 };
 
+const saveLibraryFails = () => {
+  try {
+    const payload = Array.from(state.libraryFails || []);
+    localStorage.setItem(LIBRARY_FAILS_KEY, JSON.stringify(payload));
+  } catch (_err) {
+    // ignore
+  }
+};
+
 const markWin = (entry) => {
   if (!entry) return;
-  const ids = new Set();
-  if (Array.isArray(entry.members)) {
-    entry.members.forEach((member) => ids.add(String(member.id)));
-  } else {
-    ids.add(String(entry.id));
+  const ids = collectEntryIds(entry);
+  let updated = false;
+  let removedFail = false;
+  ids.forEach((id) => {
+    const key = String(id);
+    if (!state.libraryWins.has(key)) {
+      state.libraryWins.add(key);
+      updated = true;
+    }
+    if (state.libraryFails.has(key)) {
+      state.libraryFails.delete(key);
+      removedFail = true;
+    }
+  });
+  if (updated) saveLibraryWins();
+  if (removedFail) saveLibraryFails();
+  if (state.libraryMode) {
+    renderLibraryList();
   }
-  if (entry.related && Array.isArray(entry.related.all_ids)) {
-    entry.related.all_ids.forEach((id) => ids.add(String(id)));
-  }
-  ids.forEach((id) => state.libraryWins.add(id));
-  saveLibraryWins();
+};
+
+const markLoss = (entry) => {
+  if (!entry) return;
+  const ids = collectEntryIds(entry);
+  let changed = false;
+  ids.forEach((id) => {
+    const key = String(id);
+    if (!state.libraryWins.has(key) && !state.libraryFails.has(key)) {
+      state.libraryFails.add(key);
+      changed = true;
+    }
+  });
+  if (changed) saveLibraryFails();
   if (state.libraryMode) {
     renderLibraryList();
   }
@@ -974,6 +1181,11 @@ const loadUiSettings = () => {
   try {
     const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY));
     if (stored && typeof stored === "object") {
+      const parsedOrder = Array.isArray(stored.libraryOrder)
+        ? stored.libraryOrder
+        : (typeof stored.libraryOrder === "string"
+          ? stored.libraryOrder.split(",").map((s) => s.trim()).filter(Boolean)
+          : null);
       return {
         animations: stored.animations !== false,
         showHints: stored.showHints !== false,
@@ -985,7 +1197,8 @@ const loadUiSettings = () => {
           : (typeof stored.animSpeed === "number" ? Math.round(stored.animSpeed * 1000) : 450),
         minMembers: typeof stored.minMembers === "number" ? stored.minMembers : 50000,
         fontSize: typeof stored.fontSize === "number" ? stored.fontSize : 12,
-        relatedMode: typeof stored.relatedMode === "number" ? stored.relatedMode : null
+        relatedMode: typeof stored.relatedMode === "number" ? stored.relatedMode : null,
+        libraryOrder: parsedOrder && parsedOrder.length === 3 ? parsedOrder : ["solved", "failed", "unsolved"]
       };
     }
   } catch (_err) {
@@ -1001,7 +1214,8 @@ const loadUiSettings = () => {
     minMembers: 50000,
     fontSize: 12,
     dailyMode: false,
-    relatedMode: null
+    relatedMode: null,
+    libraryOrder: ["solved", "failed", "unsolved"]
   };
 };
 
@@ -1027,6 +1241,12 @@ const applyUiSettings = () => {
   if (dom.settingAnimSpeed) dom.settingAnimSpeed.value = String(animMs);
   if (dom.settingMinMembers) dom.settingMinMembers.value = String(state.uiSettings.minMembers || 0);
   if (dom.settingFontSize) dom.settingFontSize.value = String(state.uiSettings.fontSize || 12);
+  state.libraryOrder = Array.isArray(state.uiSettings.libraryOrder)
+    ? state.uiSettings.libraryOrder
+    : ["solved", "failed", "unsolved"];
+  if (dom.settingLibraryOrder) {
+    dom.settingLibraryOrder.value = state.libraryOrder.join(",");
+  }
   document.querySelectorAll(".board-row").forEach((row) => applyRowAnimationTiming(row));
   updateAvailableCount();
   renderHints();
@@ -1204,11 +1424,41 @@ const renderLibraryList = () => {
     })
     .map((entry) => entry);
 
-  const sorted = sortEntries(
-    items,
-    sortState,
-    (a, b) => a._libIndex - b._libIndex
-  );
+  const solvedCount = items.filter((entry) => isLibrarySolved(entry)).length;
+  const totalCount = items.length;
+  if (dom.librarySolvedCount) {
+    dom.librarySolvedCount.textContent = `${solvedCount}/${totalCount}`;
+  }
+
+  const compareBySort = (a, b) => {
+    if (!sortState || sortState.dir === "default") return 0;
+    const multiplier = sortState.dir === "desc" ? -1 : 1;
+    const key = sortState.key || "title";
+    const valA = getSortValue(a, key);
+    const valB = getSortValue(b, key);
+    const numA = Number(valA);
+    const numB = Number(valB);
+    if (Number.isFinite(numA) && Number.isFinite(numB) && numA !== numB) {
+      return (numA - numB) * multiplier;
+    }
+    const strA = formatDetailValue(valA).toString().toLowerCase();
+    const strB = formatDetailValue(valB).toString().toLowerCase();
+    if (strA !== strB) return strA.localeCompare(strB) * multiplier;
+    return 0;
+  };
+
+  const compareTitle = (a, b) => (a.displayTitle || a.titles.main || "").toLowerCase()
+    .localeCompare((b.displayTitle || b.titles.main || "").toLowerCase());
+
+  const sorted = items.slice().sort((a, b) => {
+    const rankDiff = getLibrarySolveRank(a) - getLibrarySolveRank(b);
+    if (rankDiff !== 0) return rankDiff;
+    const sortDiff = compareBySort(a, b);
+    if (sortDiff !== 0) return sortDiff;
+    const titleDiff = compareTitle(a, b);
+    if (titleDiff !== 0) return titleDiff;
+    return a._libIndex - b._libIndex;
+  });
 
   sorted.forEach((entry) => renderLibraryRow(entry));
 };
@@ -1538,6 +1788,9 @@ const restoreDailyProgress = (progress) => {
   renderHints();
 
   if (state.gameOver && state.target) {
+    if (state.resultOutcome === "lose") {
+      markLoss(state.target);
+    }
     const targetTitle = state.target.displayTitle || state.target.titles.main;
     if (state.resultOutcome === "win") {
       setStatus(`Correct! It was ${targetTitle}.`, "good");
@@ -1730,6 +1983,7 @@ const guessEntry = (entry) => {
       lockInput(true);
       state.resultOutcome = "lose";
       registerLoss();
+      markLoss(state.target);
       renderResult(state.target, "lose");
     } else {
       setStatus("Not quite. Try again.", "");
@@ -1775,7 +2029,7 @@ const handleGlobalTyping = (event) => {
 };
 
 const init = async () => {
-  const [config, entries] = await Promise.all([
+  const [config, dataPayload] = await Promise.all([
     fetch("./config.json").then((res) => res.json()),
     fetch("./data.json").then((res) => res.json())
   ]);
@@ -1785,6 +2039,7 @@ const init = async () => {
   state.resultOutcome = "";
   state.streaks = loadStreaks();
   state.libraryWins = loadLibraryWins();
+  state.libraryFails = loadLibraryFails();
   const loadedSettings = loadUiSettings();
   state.uiSettings = {
     ...loadedSettings,
@@ -1793,11 +2048,49 @@ const init = async () => {
     finishedOnly: !!loadedSettings.finishedOnly,
     dailyMode: false
   };
+  state.libraryOrder = Array.isArray(state.uiSettings.libraryOrder)
+    ? state.uiSettings.libraryOrder
+    : ["solved", "failed", "unsolved"];
+  state.uiSettings.libraryOrder = state.libraryOrder;
   state.displayMode = state.uiSettings.titleMode || config.displayTitle || "english";
-  state.rawEntries = entries.map((entry) => ({
-    ...entry,
-    displayTitle: pickDisplayTitle(entry, state.displayMode)
-  }));
+  const entries = Array.isArray(dataPayload)
+    ? dataPayload
+    : Array.isArray(dataPayload && dataPayload.entries)
+      ? dataPayload.entries
+      : [];
+
+  const hasMembers = entries.some((entry) => Number.isFinite(Number(entry.members)));
+  const hasStatus = entries.some((entry) => entry && entry.status);
+
+  if (!hasMembers) {
+    state.uiSettings.minMembers = 0;
+  }
+  if (!hasStatus) {
+    state.uiSettings.hideUnreleased = false;
+    state.uiSettings.finishedOnly = false;
+  }
+
+  state.rawEntries = entries.map((entry) => {
+    const titles = {
+      main: entry.title_display || entry.title_english || entry.title || "",
+      english: entry.title_english || entry.title_display || entry.title || "",
+      japanese: entry.title || entry.title_display || entry.title_english || ""
+    };
+    const search_titles = uniqueList([
+      entry.title,
+      entry.title_english,
+      entry.title_display,
+      ...(entry.search_titles || [])
+    ]);
+    return {
+      ...entry,
+      titles: entry.titles || titles,
+      poster: entry.poster || entry.image || "",
+      search_titles,
+      categories: entry.categories || buildCategories(entry, config),
+      displayTitle: pickDisplayTitle({ ...entry, titles }, state.displayMode)
+    };
+  });
 
   buildPools();
   buildSearchIndex();
@@ -1831,6 +2124,8 @@ window.addEventListener("DOMContentLoaded", () => {
   dom.libraryHeader = document.querySelector("#library-header");
   dom.libraryBody = document.querySelector("#library-body");
   dom.librarySearch = document.querySelector("#library-search");
+  dom.librarySolvedCount = document.querySelector("#library-solved-count");
+  dom.settingLibraryOrder = document.querySelector("#setting-library-order");
   dom.libraryBtn = document.querySelector("#library-btn");
   dom.settingsDailyNote = document.querySelector("#settings-daily-note");
   dom.guessCount = document.querySelector("#guess-count");
@@ -2089,6 +2384,18 @@ window.addEventListener("DOMContentLoaded", () => {
 
   if (dom.librarySearch) {
     dom.librarySearch.addEventListener("input", renderLibraryList);
+  }
+  if (dom.settingLibraryOrder) {
+    dom.settingLibraryOrder.addEventListener("change", () => {
+      const value = dom.settingLibraryOrder.value || "solved,failed,unsolved";
+      const next = value.split(",").map((s) => s.trim()).filter(Boolean);
+      if (next.length === 3) {
+        state.libraryOrder = next;
+        state.uiSettings.libraryOrder = next;
+        saveUiSettings();
+        renderLibraryList();
+      }
+    });
   }
 
   window.addEventListener("scroll", hidePreview, true);
