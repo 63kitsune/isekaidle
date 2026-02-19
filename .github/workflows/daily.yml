@@ -12,6 +12,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -27,4 +29,5 @@ jobs:
           git config --local user.name "GitHub Action"
           git add daily.json
           git commit -m "Update daily.json" || echo "No changes to commit"
-          git push
+          git pull --rebase origin main
+          git push origin HEAD:main
