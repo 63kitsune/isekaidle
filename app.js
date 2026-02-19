@@ -18,7 +18,7 @@ const state = {
   libraryMode: false,
   libraryWins: new Set(),
   libraryFails: new Set(),
-  streaks: { current: 0, daily: 0, lastDailyId: null },
+  streaks: { current: 0, daily: 0, lastDailyId: null, lastDailyDate: null },
   librarySort: { key: "title", dir: "default" },
   libraryOrder: ["solved", "failed", "unsolved"],
   boardSort: { key: "title", dir: "default" },
@@ -89,6 +89,11 @@ const DAILY_PROGRESS_KEY = "isekai-daily-progress";
 const LIBRARY_WINS_KEY = "isekai-library-wins";
 const LIBRARY_FAILS_KEY = "isekai-library-fails";
 const STREAK_KEY = "isekai-streaks";
+const DAILY_URLS = [
+  "./daily.json",
+  "https://raw.githubusercontent.com/63kitsune/isekaidle/refs/heads/main/daily.json",
+  "https://63kitsune.github.io/isekaidle/daily.json"
+];
 
 const seasonPattern = /(\bseason\s*1\b|\b1st\s*season\b|\bfirst\s*season\b|\bs1\b|\bseason\s*one\b|\bpart\s*1\b)/i;
 
@@ -1091,13 +1096,14 @@ const loadStreaks = () => {
       return {
         current: Number(stored.current) || 0,
         daily: Number(stored.daily) || 0,
-        lastDailyId: stored.lastDailyId ? String(stored.lastDailyId) : null
+        lastDailyId: stored.lastDailyId ? String(stored.lastDailyId) : null,
+        lastDailyDate: stored.lastDailyDate ? String(stored.lastDailyDate) : null
       };
     }
   } catch (_err) {
     // ignore
   }
-  return { current: 0, daily: 0, lastDailyId: null };
+  return { current: 0, daily: 0, lastDailyId: null, lastDailyDate: null };
 };
 
 const saveStreaks = () => {
@@ -1119,12 +1125,38 @@ const updateStreakDisplay = () => {
   }
 };
 
+const getUtcDateStamp = () => new Date().toISOString().slice(0, 10);
+
+const parseUtcDateToMs = (value) => {
+  if (!value || typeof value !== "string") return null;
+  const parts = value.split("-").map((part) => Number(part));
+  if (parts.length !== 3 || parts.some((part) => !Number.isFinite(part))) return null;
+  const [year, month, day] = parts;
+  return Date.UTC(year, month - 1, day);
+};
+
+const maybeResetDailyStreak = (dailyId) => {
+  if (!dailyId) return;
+  const lastDate = state.streaks.lastDailyDate;
+  if (!lastDate) return;
+  const today = getUtcDateStamp();
+  // how many times did it went over 2:00 utc?
+  const resets = Math.floor((parseUtcDateToMs(today) - parseUtcDateToMs(lastDate)) / (24 * 60 * 60 * 1000));
+  // ir it went over 2 days, reset the streak (accounts for missed days or clock changes), only resets after 3:00 since sometimes it takes a while for the dailyId to update after 2:00
+  if (resets >= 2 && new Date().getUTCHours() >= 3 || resets >=3) {
+    state.streaks.daily = 0;
+    saveStreaks();
+    updateStreakDisplay();
+  }
+};
+
 const registerWin = () => {
   if (state.uiSettings.dailyMode) {
     if (state.dailyId && state.streaks.lastDailyId !== String(state.dailyId)) {
       state.streaks.daily = (state.streaks.daily || 0) + 1;
       state.streaks.lastDailyId = String(state.dailyId);
     }
+    state.streaks.lastDailyDate = getUtcDateStamp();
   } else {
     state.streaks.current = (state.streaks.current || 0) + 1;
   }
@@ -1136,11 +1168,35 @@ const registerLoss = () => {
   if (state.uiSettings.dailyMode) {
     state.streaks.daily = 0;
     if (state.dailyId) state.streaks.lastDailyId = String(state.dailyId);
+    state.streaks.lastDailyDate = getUtcDateStamp();
   } else {
     state.streaks.current = 0;
   }
   saveStreaks();
   updateStreakDisplay();
+};
+
+const parseDailyId = (data) => {
+  if (typeof data === "string" || typeof data === "number") return String(data);
+  if (data && (typeof data.id === "string" || typeof data.id === "number")) return String(data.id);
+  return null;
+};
+
+const fetchDailyId = async () => {
+  let lastError = null;
+  for (const url of DAILY_URLS) {
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) throw new Error(`daily.json missing at ${url}`);
+      const data = await res.json();
+      const dailyId = parseDailyId(data);
+      if (!dailyId) throw new Error(`daily.json invalid at ${url}`);
+      return dailyId;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError || new Error("daily.json missing");
 };
 
 const loadDailyProgress = () => {
@@ -2221,12 +2277,9 @@ window.addEventListener("DOMContentLoaded", () => {
           resetGame();
           return;
         }
-        const res = await fetch("./daily.json", { cache: "no-store" });
-        if (!res.ok) throw new Error("daily.json missing");
-        const data = await res.json();
-        const dailyId = typeof data === "string" ? data : (data && data.id ? data.id : null);
-        if (!dailyId) throw new Error("daily.json invalid");
+        const dailyId = await fetchDailyId();
         const storedDaily = loadDailyProgress();
+        maybeResetDailyStreak(dailyId);
         setDailyMode(true);
         saveUiSettings();
         startNewGame(String(dailyId));
