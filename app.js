@@ -1988,6 +1988,12 @@ const removeFromGuessPool = (entry) => {
 const guessEntry = (entry) => {
   if (!entry) return;
   if (state.gameOver) return;
+  if (!state.target) {
+    setStatus("No target available. Adjust filters or start a new game.", "warn");
+    lockInput(true);
+    clearSuggestions();
+    return;
+  }
   if (getGuessCount() >= getMaxGuesses()) {
     setStatus("No guesses left.", "bad");
     lockInput(true);
