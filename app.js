@@ -1226,6 +1226,14 @@ const saveDailyProgress = () => {
   }
 };
 
+const clearDailyProgress = () => {
+  try {
+    localStorage.removeItem(DAILY_PROGRESS_KEY);
+  } catch (_err) {
+    // ignore
+  }
+};
+
 const getEntryById = (id) => {
   if (!id) return null;
   const entry = state.entryById.get(id);
@@ -1815,12 +1823,45 @@ const startNewGame = (targetId) => {
   lockInput(false);
   if (dom.newRoundBtn) dom.newRoundBtn.hidden = true;
   if (!state.target) {
-    setStatus("Daily id not available with current filters.", "warn");
+    console.warn("No target available when starting a new game.", {
+      targetId,
+      dailyMode: state.uiSettings.dailyMode,
+      dailyId: state.dailyId,
+      filters: {
+        hideUnreleased: state.uiSettings.hideUnreleased,
+        finishedOnly: state.uiSettings.finishedOnly,
+        minMembers: state.uiSettings.minMembers
+      },
+      poolSize: state.answerPool.length
+    });
+    setStatus("Daily id not available with current filters. Starting a new round.", "warn");
+    if (state.uiSettings.dailyMode) {
+      setDailyMode(false);
+      saveUiSettings();
+    }
+    resetGame();
+    setStatus("Daily id not available with current filters. Started a new round.", "warn");
+    return;
   }
 };
 
 const restoreDailyProgress = (progress) => {
   if (!progress || !progress.id) return;
+  if (progress.gameOver) {
+    console.warn("Daily progress already completed. Starting a new round.", {
+      dailyId: progress.id,
+      resultOutcome: progress.resultOutcome || "",
+      skipCount: progress.skipCount || 0
+    });
+    clearDailyProgress();
+    if (state.uiSettings.dailyMode) {
+      setDailyMode(false);
+      saveUiSettings();
+    }
+    resetGame();
+    setStatus("Daily already completed. Started a new round.", "warn");
+    return;
+  }
   state.dailyId = progress.id;
   state.guessSkips = typeof progress.skipCount === "number" ? progress.skipCount : 0;
   state.hintState = progress.hintState && typeof progress.hintState === "object" ? progress.hintState : {};
@@ -1989,6 +2030,19 @@ const guessEntry = (entry) => {
   if (!entry) return;
   if (state.gameOver) return;
   if (!state.target) {
+    console.error("Guess failed: missing target.", {
+      entryId: entry && entry.id,
+      dailyMode: state.uiSettings.dailyMode,
+      dailyId: state.dailyId,
+      guessCount: getGuessCount(),
+      poolSize: state.answerPool.length,
+      guessPoolSize: state.guessPool.length,
+      filters: {
+        hideUnreleased: state.uiSettings.hideUnreleased,
+        finishedOnly: state.uiSettings.finishedOnly,
+        minMembers: state.uiSettings.minMembers
+      }
+    });
     setStatus("No target available. Resetting...", "warn");
     clearSuggestions();
     dom.input.value = "";
