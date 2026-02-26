@@ -19,6 +19,8 @@ const state = {
   libraryWins: new Set(),
   libraryFails: new Set(),
   streaks: { current: 0, daily: 0, lastDailyId: null, lastDailyDate: null },
+  dailyDefaults: null,
+  dailySettingsBackup: null,
   librarySort: { key: "title", dir: "default" },
   libraryOrder: ["solved", "failed", "unsolved"],
   boardSort: { key: "title", dir: "default" },
@@ -89,6 +91,9 @@ const DAILY_PROGRESS_KEY = "isekai-daily-progress";
 const LIBRARY_WINS_KEY = "isekai-library-wins";
 const LIBRARY_FAILS_KEY = "isekai-library-fails";
 const STREAK_KEY = "isekai-streaks";
+const DAILY_DEFAULT_MIN_MEMBERS = 100000;
+const DAILY_DEFAULT_HIDE_UNRELEASED = true;
+const DAILY_DEFAULT_FINISHED_ONLY = true;
 const DAILY_URLS = [
   "./daily.json",
   "https://raw.githubusercontent.com/63kitsune/isekaidle/refs/heads/main/daily.json",
@@ -411,7 +416,6 @@ const buildRulesContent = () => {
 };
 
 const getFilteredEntries = (forceFilters = false) => {
-  if (!forceFilters && state.uiSettings.dailyMode) return state.rawEntries;
   const minMembers = Number(state.uiSettings.minMembers || 0);
   const hideUnreleased = !!state.uiSettings.hideUnreleased;
   const finishedOnly = !!state.uiSettings.finishedOnly;
@@ -1283,6 +1287,32 @@ const loadUiSettings = () => {
   };
 };
 
+const applyDailyDefaults = () => {
+  const defaults = state.dailyDefaults;
+  if (!defaults) return;
+  if (!state.dailySettingsBackup) {
+    state.dailySettingsBackup = {
+      hideUnreleased: state.uiSettings.hideUnreleased,
+      finishedOnly: state.uiSettings.finishedOnly,
+      minMembers: state.uiSettings.minMembers,
+      relatedMode: state.uiSettings.relatedMode
+    };
+  }
+  state.uiSettings.hideUnreleased = defaults.hideUnreleased;
+  state.uiSettings.finishedOnly = defaults.finishedOnly;
+  state.uiSettings.minMembers = defaults.minMembers;
+  state.uiSettings.relatedMode = defaults.relatedMode;
+};
+
+const restoreSettingsFromDaily = () => {
+  if (!state.dailySettingsBackup) return;
+  state.uiSettings.hideUnreleased = state.dailySettingsBackup.hideUnreleased;
+  state.uiSettings.finishedOnly = state.dailySettingsBackup.finishedOnly;
+  state.uiSettings.minMembers = state.dailySettingsBackup.minMembers;
+  state.uiSettings.relatedMode = state.dailySettingsBackup.relatedMode;
+  state.dailySettingsBackup = null;
+};
+
 const saveUiSettings = () => {
   try {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.uiSettings));
@@ -1749,7 +1779,13 @@ const resetGame = () => {
 
 const setDailyMode = (enabled) => {
   state.uiSettings.dailyMode = !!enabled;
+  if (state.uiSettings.dailyMode) {
+    applyDailyDefaults();
+  } else {
+    restoreSettingsFromDaily();
+  }
   if (dom.dailyBtn) dom.dailyBtn.classList.toggle("active", state.uiSettings.dailyMode);
+  applyUiSettings();
   updateStreakDisplay();
   updateAvailableCount();
   updateHash();
@@ -2193,6 +2229,15 @@ const init = async () => {
     state.uiSettings.hideUnreleased = false;
     state.uiSettings.finishedOnly = false;
   }
+
+  state.dailyDefaults = {
+    minMembers: hasMembers ? DAILY_DEFAULT_MIN_MEMBERS : 0,
+    hideUnreleased: hasStatus ? DAILY_DEFAULT_HIDE_UNRELEASED : false,
+    finishedOnly: hasStatus ? DAILY_DEFAULT_FINISHED_ONLY : false,
+    relatedMode: Number.isFinite(Number(config && config.relatedMode))
+      ? Number(config.relatedMode)
+      : null
+  };
 
   state.rawEntries = entries.map((entry) => {
     const titles = {
