@@ -1989,9 +1989,14 @@ const guessEntry = (entry) => {
   if (!entry) return;
   if (state.gameOver) return;
   if (!state.target) {
-    setStatus("No target available. Adjust filters or start a new game.", "warn");
-    lockInput(true);
+    setStatus("No target available. Resetting...", "warn");
     clearSuggestions();
+    dom.input.value = "";
+    if (state.uiSettings.dailyMode && state.dailyId) {
+      startNewGame(state.dailyId);
+    } else {
+      resetGame();
+    }
     return;
   }
   if (getGuessCount() >= getMaxGuesses()) {
