@@ -1839,10 +1839,12 @@ const startNewGame = (targetId) => {
       setDailyMode(false);
       saveUiSettings();
     }
+    clearDailyProgress();
     resetGame();
     setStatus("Daily id not available with current filters. Started a new round.", "warn");
-    return;
+    return false;
   }
+  return true;
 };
 
 const restoreDailyProgress = (progress) => {
@@ -2047,7 +2049,8 @@ const guessEntry = (entry) => {
     clearSuggestions();
     dom.input.value = "";
     if (state.uiSettings.dailyMode && state.dailyId) {
-      startNewGame(state.dailyId);
+      const started = startNewGame(state.dailyId);
+      if (!started) resetGame();
     } else {
       resetGame();
     }
@@ -2347,10 +2350,10 @@ window.addEventListener("DOMContentLoaded", () => {
         maybeResetDailyStreak(dailyId);
         setDailyMode(true);
         saveUiSettings();
-        startNewGame(String(dailyId));
-        if (storedDaily && storedDaily.id === String(dailyId)) {
+        const started = startNewGame(String(dailyId));
+        if (started && storedDaily && storedDaily.id === String(dailyId)) {
           restoreDailyProgress(storedDaily);
-        } else {
+        } else if (started) {
           saveDailyProgress();
         }
       } catch (err) {
